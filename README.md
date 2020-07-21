@@ -1,0 +1,2 @@
+# LumberBot
+Simple Discord bot
