@@ -13,8 +13,10 @@ class LumberBot(Bot):
                            "konnichiwa", "shalom"]
         load_dotenv()
         self.mention_id = os.getenv("BOT_MENTION_ID")
+        self.salute_directory = os.getenv("SALUTE_DIRECTORY")
 
-        self.add_command(self.placeholder)
+        self.add_command(self.tell)
+        self.add_command(self.clip)
 
     # EVENTS
     async def on_ready(self):
@@ -29,7 +31,8 @@ class LumberBot(Bot):
         author_mention = "<@!" + str(message.author.id) + ">"
 
         # check if the message @s our bot and greets it. Respond with a random greeting
-        # I didn't make this a separate command because this way allows to ignore punctuation
+        # didn't make this a separate command because this allows the bot to respond regardless
+        # of punctuation or where the greeting is placed in the message
         if content.startswith(self.mention_id):
             # check for greeting
             greeting_patterns = "|".join(self.greetings)
@@ -47,14 +50,20 @@ class LumberBot(Bot):
             print("No Big Detected")'''
 
         if "trip" in content:
-            await message.channel.send("trip? triple? triplexlink??")
+            salute = random.choice(os.listdir(self.salute_directory))
+            await message.channel.send(content=author_mention + " trip? triple? triplexlink??",
+                                       file=discord.File(self.salute_directory + "/" + salute))
 
+        # once we have checked the full message, process any commands that may be present
         await self.process_commands(message)
 
     # COMMANDS
-    @command(name="placeholder")
-    async def placeholder(ctx):
-        print("placeholder")
+    @command(name="tell")
+    async def tell(ctx, args):
+        pass
+
+    @command(name="clip")
+    async def clip(ctx, args):
         pass
 
     # HELPERS
@@ -63,6 +72,3 @@ class LumberBot(Bot):
         for index, word in enumerate(words):
             if word == "big" and index + 1 != len(words):
                 return words[index + 1]
-
-    def load_salute(self):
-        pass
