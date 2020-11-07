@@ -22,6 +22,10 @@ class LumberBot(Bot):
     async def on_ready(self):
         print(f'{self.user} has connected to Discord!')
 
+        self.general_channels = self.collect_general_channels()
+        print(self.general_channels)
+
+
     # override on_message to implement some functionality outside of normal commands
     async def on_message(self, message):
         if message.author == self.user or message.author.bot:
@@ -51,7 +55,7 @@ class LumberBot(Bot):
 
         if "trip" in content:
             salute = random.choice(os.listdir(self.salute_directory))
-            await message.channel.send(content=author_mention + " trip? triple? triplexlink??",
+            await message.channel.send(content=author_mention + " trip? triple? triplexlink?",
                                        file=discord.File(self.salute_directory + "/" + salute))
 
         # once we have checked the full message, process any commands that may be present
@@ -59,7 +63,7 @@ class LumberBot(Bot):
 
     # COMMANDS
     @command(name="tell")
-    async def tell(ctx, args):
+    async def tell(ctx, arg1, *args):
         pass
 
     @command(name="clip")
@@ -72,3 +76,12 @@ class LumberBot(Bot):
         for index, word in enumerate(words):
             if word == "big" and index + 1 != len(words):
                 return words[index + 1]
+
+    def collect_general_channels(self):
+        channels = {}
+        for guild in self.guilds:
+            for channel in guild.text_channels:
+                if channel.name == "general":
+                    channels[guild.name] = channel
+
+        return channels
