@@ -1,6 +1,6 @@
 import discord
 from discord.ext import tasks
-from discord.ext.commands import Bot, command
+from discord.ext.commands import Bot, command, CommandNotFound
 from dotenv import load_dotenv
 import os
 import random
@@ -23,12 +23,13 @@ class LumberBot(Bot):
 
         self.most_recent_match_id = None # used for warzone win tracking
 
-        self.add_command(self.tell)
+        # eventually add loop in init to add all commands regardless of number (to avoid having to hardcode)
         self.add_command(self.clip)
 
         logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%H:%M:%S')
 
-    # EVENTS
+    #################################    EVENTS    #################################
+
     async def on_ready(self):
         logging.info(f'{self.user} has connected to Discord')
         self.general_channels = self.collect_general_channels()
@@ -69,6 +70,15 @@ class LumberBot(Bot):
 
         # once we have checked the full message, process any commands that may be present
         await self.process_commands(message)
+
+    # add help command functionality at some point
+    async def on_command_error(self, ctx, error):
+        if isinstance(error, CommandNotFound):
+            logging.warning(f"Command in message \"{ctx.message.content}\" not found. Ignoring.")
+            return
+        raise error
+
+    #################################    TASKS    #################################
 
     # TO-DO: set up retries if API calls fail
     @tasks.loop(minutes=15.0)
@@ -115,7 +125,7 @@ class LumberBot(Bot):
 
                     duration = round((match["utcEndSeconds"] - match["utcStartSeconds"]) / 60, 2)
                     stats = self.format_stats(team_stats)
-                    await self.general_channels["lumber gang"].send(f"Congratulations on a recent Warzone win!\n**Match Duration**: {duration} minutes\n**Team Stats**:\n{stats}")
+                    await self.general_channels["Bot Test Server"].send(f"Congratulations on a recent Warzone win!\n**Match Duration**: {duration} minutes\n**Team Stats**:\n{stats}")
 
                 matches_checked += 1
 
@@ -123,16 +133,14 @@ class LumberBot(Bot):
 
         logging.info(f"Win tracker run complete. {matches_checked} recent matches checked.")
 
-    # COMMANDS
-    @command(name="tell")
-    async def tell(ctx, arg1, *args):
-        pass
-
+    #################################    COMMANDS    #################################
+    # eventually add command descriptions/help command?
     @command(name="clip")
     async def clip(ctx, args):
         pass
 
-    # HELPERS
+    #################################    HELPERS    #################################
+
     def check_for_big(self, message):
         words = message.split(" ")
         for index, word in enumerate(words):
