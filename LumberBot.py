@@ -67,6 +67,7 @@ class LumberBot(Bot):
         await self.process_commands(message)
 
     # TO-DO: Add better logging (checking matches, number of matches checked, etc.)
+    # TO-DO: set up retries if API calls fail
     @tasks.loop(minutes=30.0)
     async def check_warzone_wins(self):
         api_session = self.authenticate_warzone_api(self.cod_email, self.cod_pw)
@@ -84,13 +85,13 @@ class LumberBot(Bot):
         # this API request will return Warzone matches played in the last week. Although there is a start and end in the
         # URL, they don't work as expected and there is very little documentation as to what these attributes do.
         recent_matches = api_session.get(req_URL).json()["data"]["matches"]
+        matches_checked = 0
 
         # the purpose of most_recent_match_id is to make sure we only process new matches added to the list (despite
         # pulling the full list each time)
         if self.most_recent_match_id == None:
             self.most_recent_match_id = recent_matches[0]["matchID"]
         elif recent_matches[0]["matchID"] != self.most_recent_match_id: # there are new matches to process
-            matches_checked = 0
             for match in recent_matches:
                 current_ID = match["matchID"]
                 if current_ID == self.most_recent_match_id: # we have processed all new matches in the list
@@ -112,12 +113,13 @@ class LumberBot(Bot):
 
                     duration = round((match["utcEndSeconds"] - match["utcStartSeconds"]) / 60, 2)
                     stats = self.format_stats(team_stats)
-                    await self.general_channels["Bot Test Server"].send("Congratulations on your recent win!  \n**Match Duration**: " + str(duration) + " minutes  \n**Team Stats**:  \n" + stats)
+                    await self.general_channels["Bot Test Server"].send(f"Congratulations on your recent win!\n**Match Duration**: {duration} minutes\n**Team Stats**:\n{stats}")
 
                 matches_checked += 1
 
-            print(str(matches_checked) + " recent matches checked. Will run again in 30 minutes.")
             self.most_recent_match_id = recent_matches[0]["matchID"]
+
+        print(f"{matches_checked} recent matches checked. Will run again in 30 minutes.")
 
     # COMMANDS
     @command(name="tell")
@@ -144,7 +146,7 @@ class LumberBot(Bot):
 
         return channels
 
-    # returns markdown formatted list of players and their match kills
+    # returns formatted list of players and their match stats
     def format_stats(self, player_dict):
         format = ""
         for player, stats in player_dict.items():
@@ -153,7 +155,7 @@ class LumberBot(Bot):
             kd_ratio = kills if deaths == 0 else kills / deaths
             damage = stats[2]
 
-            format += "    • " + player + ": " + str(int(kills)) + "-" + str(int(deaths)) + " (" + str(kd_ratio) + " K/D), " + str(int(damage)) + " damage.  \n"
+            format += f"    • {player}: {int(kills)}-{int(deaths)} ({kd_ratio} K/D), {int(damage)} damage.\n"
 
         return format
 
