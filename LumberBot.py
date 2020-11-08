@@ -26,7 +26,7 @@ class LumberBot(Bot):
         self.add_command(self.tell)
         self.add_command(self.clip)
 
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s: %(message)s', datefmt='%H:%M:%S')
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%H:%M:%S')
 
     # EVENTS
     async def on_ready(self):
@@ -71,7 +71,7 @@ class LumberBot(Bot):
         await self.process_commands(message)
 
     # TO-DO: set up retries if API calls fail
-    @tasks.loop(minutes=30.0)
+    @tasks.loop(minutes=15.0)
     async def check_warzone_wins(self):
         logging.info("Running Warzone Win Tracker")
         api_session = self.authenticate_warzone_api(self.cod_email, self.cod_pw)
