@@ -84,8 +84,6 @@ class LumberBot(Bot):
         base_URL = "https://my.callofduty.com/api/papi-client/"
         req_URL = base_URL + "crm/cod/v2/title/mw/platform/uno/gamer/" + self.cod_username + "/matches/wz/start/0/end/0/details"
 
-        self.most_recent_match_id = "6359357863122988582"
-
         # this API request will return Warzone matches played in the last week. Although there is a start and end in the
         # URL, they don't work as expected and there is very little documentation as to what these attributes do.
         recent_matches = api_session.get(req_URL).json()["data"]["matches"]
@@ -117,7 +115,7 @@ class LumberBot(Bot):
 
                     duration = round((match["utcEndSeconds"] - match["utcStartSeconds"]) / 60, 2)
                     stats = self.format_stats(team_stats)
-                    await self.general_channels["Bot Test Server"].send(f"Congratulations on your recent win!\n**Match Duration**: {duration} minutes\n**Team Stats**:\n{stats}")
+                    await self.general_channels["lumber gang"].send(f"Congratulations on a recent Warzone win!\n**Match Duration**: {duration} minutes\n**Team Stats**:\n{stats}")
 
                 matches_checked += 1
 
@@ -151,6 +149,7 @@ class LumberBot(Bot):
         return channels
 
     # returns formatted list of players and their match stats
+    # player_dict format is expected to be {gamertag: [kills, deaths, damage]}
     def format_stats(self, player_dict):
         format = ""
         for player, stats in player_dict.items():
@@ -158,6 +157,16 @@ class LumberBot(Bot):
             deaths = stats[1]
             kd_ratio = kills if deaths == 0 else kills / deaths
             damage = stats[2]
+
+            # hardcode known gamertags to Discord message IDs
+            if player == "bglowniak":
+                player = "<@!250017966928691211>"
+            elif player == "triplexlink":
+                player = "<@!273518554517602305>"
+            elif player == "funny_monkey998":
+                player = "<@!479298269110075433>"
+            elif player == "MisterDuV":
+                player = "<@!425035767350296578>"
 
             format += f"    • {player}: {int(kills)}-{int(deaths)} ({kd_ratio} K/D), {int(damage)} damage.\n"
 
