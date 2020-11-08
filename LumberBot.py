@@ -6,6 +6,7 @@ import os
 import random
 import re
 import requests
+import logging
 
 class LumberBot(Bot):
     def __init__(self, *args, **kwargs):
@@ -25,9 +26,11 @@ class LumberBot(Bot):
         self.add_command(self.tell)
         self.add_command(self.clip)
 
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s: %(message)s', datefmt='%H:%M:%S')
+
     # EVENTS
     async def on_ready(self):
-        print(f'{self.user} has connected to Discord!')
+        logging.info(f'{self.user} has connected to Discord')
         self.general_channels = self.collect_general_channels()
         self.check_warzone_wins.start()
 
@@ -59,6 +62,7 @@ class LumberBot(Bot):
             print("No Big Detected")'''
 
         if "trip" in content:
+            logging.info("\"trip\" detected in message. Sending response.")
             salute = random.choice(os.listdir(self.salute_directory))
             await message.channel.send(content=author_mention + " trip? triple? triplexlink?",
                                        file=discord.File(self.salute_directory + "/" + salute))
@@ -66,10 +70,10 @@ class LumberBot(Bot):
         # once we have checked the full message, process any commands that may be present
         await self.process_commands(message)
 
-    # TO-DO: Add better logging (checking matches, number of matches checked, etc.)
     # TO-DO: set up retries if API calls fail
     @tasks.loop(minutes=30.0)
     async def check_warzone_wins(self):
+        logging.info("Running Warzone Win Tracker")
         api_session = self.authenticate_warzone_api(self.cod_email, self.cod_pw)
 
         # if API session is not successfully set up, don't proceed
@@ -99,7 +103,7 @@ class LumberBot(Bot):
 
                 placement = match["playerStats"]["teamPlacement"]
                 if placement == 1: # we won a match
-                    print("Win spotted!")
+                    logging.info(f"Warzone win found with ID {current_ID}. Creating stats message.")
                     team = match["player"]["team"]
                     match_url = base_URL + "crm/cod/v2/title/mw/platform/uno/fullMatch/wz/" + current_ID + "/en"
                     match_data = api_session.get(match_url).json()
@@ -119,7 +123,7 @@ class LumberBot(Bot):
 
             self.most_recent_match_id = recent_matches[0]["matchID"]
 
-        print(f"{matches_checked} recent matches checked. Will run again in 30 minutes.")
+        logging.info(f"Win tracker run complete. {matches_checked} recent matches checked.")
 
     # COMMANDS
     @command(name="tell")
@@ -181,7 +185,8 @@ class LumberBot(Bot):
         response = api_session.post(login_url, data=payload)
 
         if response.status_code == 200:
-            print("API Session successfully authenticated")
+            logging.info("API Session successfully authenticated")
             return api_session
         else:
+            logging.error(f"API session unable to be established with error code {response.status_code}")
             return None
