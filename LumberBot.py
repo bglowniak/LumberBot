@@ -20,6 +20,8 @@ class LumberBot(Bot):
         self.cod_username = os.getenv("COD_USERNAME")
         self.cod_pw = os.getenv("COD_AUTH")
 
+        self.most_recent_match_id = None # used for warzone win tracking
+
         self.add_command(self.tell)
         self.add_command(self.clip)
 
@@ -64,19 +66,20 @@ class LumberBot(Bot):
         # once we have checked the full message, process any commands that may be present
         await self.process_commands(message)
 
-
+    # TO-DO: Add better logging (checking matches, number of matches checked, etc.)
     @tasks.loop(minutes=30.0)
     async def check_warzone_wins(self):
         api_session = self.authenticate_warzone_api(self.cod_email, self.cod_pw)
 
+        # if API session is not successfully set up, don't proceed
+        # TO-DO: set up retries if session setup fails
+        if api_session is None:
+            return
+
         base_URL = "https://my.callofduty.com/api/papi-client/"
         req_URL = base_URL + "crm/cod/v2/title/mw/platform/uno/gamer/" + self.cod_username + "/matches/wz/start/0/end/0/details"
 
-        #most_recent_match_id = None
-        most_recent_match_id = "6359357863122988582"
-
-        # TO-DO: Add loop so the code below executes every 15 (or 30?) minutes
-        # TO-DO: Add better logging (checking matches, number of matches checked, etc.)
+        self.most_recent_match_id = "6359357863122988582"
 
         # this API request will return Warzone matches played in the last week. Although there is a start and end in the
         # URL, they don't work as expected and there is very little documentation as to what these attributes do.
@@ -84,12 +87,13 @@ class LumberBot(Bot):
 
         # the purpose of most_recent_match_id is to make sure we only process new matches added to the list (despite
         # pulling the full list each time)
-        if most_recent_match_id == None:
-            most_recent_match_id = recent_matches[0]["matchID"]
-        elif recent_matches[0]["matchID"] != most_recent_match_id: # there are new matches to process
+        if self.most_recent_match_id == None:
+            self.most_recent_match_id = recent_matches[0]["matchID"]
+        elif recent_matches[0]["matchID"] != self.most_recent_match_id: # there are new matches to process
+            matches_checked = 0
             for match in recent_matches:
                 current_ID = match["matchID"]
-                if current_ID == most_recent_match_id: # we have processed all new matches in the list and thus can stop
+                if current_ID == self.most_recent_match_id: # we have processed all new matches in the list
                     break
 
                 placement = match["playerStats"]["teamPlacement"]
@@ -103,12 +107,17 @@ class LumberBot(Bot):
 
                     for player in match_data["data"]["allPlayers"]:
                         if player["player"]["team"] == team:
-                            team_stats[player["player"]["username"]] = player["playerStats"]["kills"]
+                            playerStats = player["playerStats"]
+                            team_stats[player["player"]["username"]] = [playerStats["kills"], playerStats["deaths"], playerStats["damageDone"]]
 
+                    duration = round((match["utcEndSeconds"] - match["utcStartSeconds"]) / 60, 2)
                     stats = self.format_stats(team_stats)
-                    await self.general_channels["Bot Test Server"].send("Congratulations on your recent win!  \nMatch Time:  \nTeam Kills:  \n" + stats)
+                    await self.general_channels["Bot Test Server"].send("Congratulations on your recent win!  \n**Match Duration**: " + str(duration) + " minutes  \n**Team Stats**:  \n" + stats)
 
-            most_recent_match_id = recent_matches[0]["matchID"]
+                matches_checked += 1
+
+            print(str(matches_checked) + " recent matches checked. Will run again in 30 minutes.")
+            self.most_recent_match_id = recent_matches[0]["matchID"]
 
     # COMMANDS
     @command(name="tell")
@@ -138,12 +147,17 @@ class LumberBot(Bot):
     # returns markdown formatted list of players and their match kills
     def format_stats(self, player_dict):
         format = ""
-        for player, kills in player_dict.items():
-            format += "    • " + player + ": " + str(int(kills)) + " kills  \n"
+        for player, stats in player_dict.items():
+            kills = stats[0]
+            deaths = stats[1]
+            kd_ratio = kills if deaths == 0 else kills / deaths
+            damage = stats[2]
+
+            format += "    • " + player + ": " + str(int(kills)) + "-" + str(int(deaths)) + " (" + str(kd_ratio) + " K/D), " + str(int(damage)) + " damage.  \n"
 
         return format
 
-    # TO-DO: Add checks for when these requests don't return a status code of 200
+    # TO-DO: Add checks + retries for when these requests don't return a status code of 200
     def authenticate_warzone_api(self, email, password):
         api_session = requests.Session()
 
@@ -166,5 +180,6 @@ class LumberBot(Bot):
 
         if response.status_code == 200:
             print("API Session successfully authenticated")
-
-        return api_session
+            return api_session
+        else:
+            return None
