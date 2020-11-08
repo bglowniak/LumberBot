@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 import os
 import random
 import re
+import threading
+import requests
 
 class LumberBot(Bot):
     def __init__(self, *args, **kwargs):
@@ -14,6 +16,9 @@ class LumberBot(Bot):
         load_dotenv()
         self.mention_id = os.getenv("BOT_MENTION_ID")
         self.salute_directory = os.getenv("SALUTE_DIRECTORY")
+        self.cod_email = os.getenv("COD_EMAIL")
+        self.cod_username = os.getenv("COD_USERNAME")
+        self.cod_pw = os.getenv("COD_AUTH")
 
         self.add_command(self.tell)
         self.add_command(self.clip)
@@ -21,10 +26,8 @@ class LumberBot(Bot):
     # EVENTS
     async def on_ready(self):
         print(f'{self.user} has connected to Discord!')
-
         self.general_channels = self.collect_general_channels()
-        print(self.general_channels)
-
+        threading.Thread(target=self.warzone_win_tracker, name="warzone_win_tracker").start()
 
     # override on_message to implement some functionality outside of normal commands
     async def on_message(self, message):
@@ -85,3 +88,32 @@ class LumberBot(Bot):
                     channels[guild.name] = channel
 
         return channels
+
+    # TO-DO: Add checks for when these requests don't return a status code of 200
+    def authenticate_warzone_api(self, email, password):
+        api_session = requests.Session()
+
+        # Get CSRF Token for subsequent requests
+        r = api_session.get("https://profile.callofduty.com/cod/login")
+        XSRF_TOKEN = api_session.cookies["XSRF-TOKEN"]
+
+        # Authenticate to the COD API
+        login_url = "https://profile.callofduty.com/do_login?new_SiteId=cod"
+        payload = {
+            "username": email,
+            "password": password,
+            "remember_me": "true",
+            "_csrf": XSRF_TOKEN
+        }
+
+        # a successful post request will set the atkn and rtkn cookies in the Session variable
+        # this authenticates future API requests made with the same Session
+        response = api_session.post(login_url, data=payload)
+
+        if response.status_code == 200:
+            print("API Session successfully authenticated")
+
+        return api_session
+
+    def warzone_win_tracker(self):
+        api_session = self.authenticate_warzone_api(self.cod_email, self.cod_pw)
