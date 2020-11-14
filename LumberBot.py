@@ -7,6 +7,7 @@ import random
 import re
 import requests
 import logging
+import time
 
 class LumberBot(Bot):
     def __init__(self, *args, **kwargs):
@@ -23,26 +24,37 @@ class LumberBot(Bot):
 
         self.most_recent_match_id = None # used for warzone win tracking
 
+        # for testing
+        #self.most_recent_match_id = "1615512416848523671"
+
+        self.session_start_time = None
         self.bglow_stats = {
             "kills": 0,
             "deaths": 0,
             "matches": 0,
             "damage": 0,
-            "sessionDuration": 0
+            "inGameDuration": 0
         }
 
         # eventually add loop in init to add all commands regardless of number (to avoid having to hardcode)
-        self.add_command(self.clip)
         self.add_command(self.session_stats)
+        self.add_command(self.start_wz)
+        self.add_command(self.end_wz)
 
         logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%H:%M:%S')
+
+    @property
+    def formatted_start_time(self):
+        if self.session_start_time is None:
+            return None
+
+        return time.strftime("%m/%d %H:%M:%S", self.session_start_time)
 
     #################################    EVENTS    #################################
 
     async def on_ready(self):
         logging.info(f'{self.user} has connected to Discord')
         self.general_channels = self.collect_general_channels()
-        self.check_warzone_wins.start()
 
     # override on_message to implement some functionality outside of normal commands
     async def on_message(self, message):
@@ -91,7 +103,7 @@ class LumberBot(Bot):
 
     # TO-DO: set up retries if API calls fail
     @tasks.loop(minutes=15.0)
-    async def check_warzone_wins(self):
+    async def warzone_session_tracker(self):
         logging.info("Running Warzone Win Tracker")
         api_session = self.authenticate_warzone_api(self.cod_email, self.cod_pw)
 
@@ -102,10 +114,6 @@ class LumberBot(Bot):
 
         base_URL = "https://my.callofduty.com/api/papi-client/"
         req_URL = base_URL + "crm/cod/v2/title/mw/platform/uno/gamer/" + self.cod_username + "/matches/wz/start/0/end/0/details"
-
-
-        # FOR TESTING
-        #self.most_recent_match_id = "1615512416848523671"
 
         # this API request will return Warzone matches played in the last week. Although there is a start and end in the
         # URL, they don't work as expected and there is very little documentation as to what these attributes do.
@@ -158,13 +166,15 @@ class LumberBot(Bot):
                             self.bglow_stats["kills"] += playerStats["kills"]
                             self.bglow_stats["deaths"] += playerStats["deaths"]
                             self.bglow_stats["damage"] += playerStats["damageDone"]
-                            self.bglow_stats["sessionDuration"] += duration
+                            self.bglow_stats["inGameDuration"] += duration
 
                 # if we won this match, send a congrats message to the channel
                 if placement == 1:
                     logging.info(f"Warzone win found with ID {current_ID}. Creating stats message.")
-                    stats = self.format_stats(team_stats)
-                    await self.general_channels["Bot Test Server"].send(f"Congratulations on a recent Warzone win!\n**Match Duration**: {duration} minutes\n**Team Stats**:\n{stats}")
+                    stats = self.format_team_stats(team_stats)
+                    await self.general_channels["Bot Test Server"].send("Congratulations on a recent Warzone win!\n" \
+                                                                        f"**Match Duration**: {duration} minutes\n" \
+                                                                        f"**Team Stats**:\n{stats}")
 
                 matches_checked += 1
 
@@ -175,43 +185,60 @@ class LumberBot(Bot):
 
     #################################    COMMANDS    #################################
 
-    # eventually add command descriptions/help command?
-    @command(name="clip")
-    async def clip(ctx, args):
-        pass
+    @command(name="start_wz")
+    async def start_wz(ctx):
+        if ctx.bot.session_start_time is not None:
+            logging.info("\"start_wz\" command invoked, but there is already an active session.")
+            await ctx.channel.send(f"There is already an active session that was started at {ctx.bot.formatted_start_time}")
+            return
 
-    ''' @command(name="start_wz")
-    async def start(ctx):
-        pass
+        logging.info("Warzone session has started. Starting tracker. Good luck, team.")
+        ctx.bot.warzone_session_tracker.start()
+        ctx.bot.session_start_time = time.localtime()
+        await ctx.channel.send("Warzone tracker started. Good luck, team.")
 
     @command(name="end_wz")
-    async def end(ctx):
-        pass'''
+    async def end_wz(ctx):
+        if ctx.bot.session_start_time is None:
+            logging.info("\"end_wz\" command invoked, but there is currently no active session.")
+            await ctx.channel.send("There is currently no active session to end.")
+            return
 
+        logging.info("Warzone session has ended. Stopping tracker.")
+        ctx.bot.warzone_session_tracker.cancel()
+
+        formatted_stats = ctx.bot.format_individual_stats(time.localtime())
+        if formatted_stats is None: # no matches logged during the session
+            await ctx.channel.send("Warzone tracker stopped. There are no matches to report final stats on.")
+        else:
+            await ctx.channel.send(f"Warzone tracker stopped. Here are your final stats:\n{formatted_stats}")
+
+        # reset session variables
+        ctx.bot.session_start_time = None
+        for key in ctx.bot.bglow_stats:
+            ctx.bot.bglow_stats[key] = 0
+
+    # return stats
     @command(name="session_stats")
     async def session_stats(ctx):
-        if ctx.guild.name != "Bot Test Server":
+        if ctx.bot.session_start_time is None:
+            logging.info("Stats command invoked, but there is currently no active session.")
+            await ctx.channel.send("There is currently no active session to report stats on.")
+            return
+
+        if ctx.guild.name != "Bot Test Server": # this command is only for private use
             logging.info("Stats command invoked in normal server. Ignoring.")
             return
 
-        stats = ctx.bot.bglow_stats
-        matches = stats["matches"]
+        formatted_stats = ctx.bot.format_individual_stats(time.localtime())
 
-        if matches == 0:
+        if formatted_stats is None: # there were 0 matches to process
             logging.info("Stats command invoked with 0 matches logged. Skipping processing and informing user.")
-            await ctx.channel.send("No matches currently logged in session.")
+            await ctx.channel.send(f"No matches logged for active session.")
             return
 
-        kills = stats["kills"]
-        deaths = stats["deaths"]
-        duration = stats["sessionDuration"]
-        damage = stats["damage"]
-        kd_ratio = kills if deaths == 0 else round(kills / deaths, 2)
-        avg_damage = round(damage / matches, 2)
-        avg_duration = round(duration / matches, 2)
-
         logging.info("Stats command invoked. Processing logged stats and sending message.")
-        await ctx.channel.send(f"Here are your current stats:\n**Matches Played**: {matches}\n**K/D**: {int(kills)}-{int(deaths)} ({kd_ratio})\n**Average Damage**: {avg_damage} ({int(damage)} total)\n**Play Time (in-game)**: {int(duration)} minutes ({avg_duration} average)")
+        await ctx.channel.send(f"Here are your current session stats:\n{formatted_stats}")
 
     #################################    HELPERS    #################################
 
@@ -232,7 +259,7 @@ class LumberBot(Bot):
 
     # returns formatted list of players and their match stats
     # player_dict format is expected to be {gamertag: [kills, deaths, damage]}
-    def format_stats(self, player_dict):
+    def format_team_stats(self, player_dict):
         format = ""
         for player, stats in player_dict.items():
             kills = stats[0]
@@ -244,6 +271,28 @@ class LumberBot(Bot):
             format += f"    • {player}: {int(kills)}-{int(deaths)} ({kd_ratio} K/D), {int(damage)} damage.\n"
 
         return format
+
+    # formats individual stats from the bglow_stats dictionary
+    def format_individual_stats(self, current_time):
+        matches = self.bglow_stats["matches"]
+        if matches == 0:
+            return None
+
+        kills = self.bglow_stats["kills"]
+        deaths = self.bglow_stats["deaths"]
+        game_duration = self.bglow_stats["inGameDuration"]
+        damage = self.bglow_stats["damage"]
+        kd_ratio = kills if deaths == 0 else round(kills / deaths, 2)
+        avg_damage = round(damage / matches, 2)
+        avg_duration = round(game_duration / matches, 2)
+        full_duration = round((time.mktime(current_time) - time.mktime(self.session_start_time)) / 60, 2)
+
+        return f"**Session Start**: {self.formatted_start_time}\n" \
+               f"**Matches Played**: {matches}\n" \
+               f"**K/D**: {int(kills)}-{int(deaths)} ({kd_ratio})\n" \
+               f"**Average Damage**: {avg_damage} ({int(damage)} total)\n" \
+               f"**Total Session Duration**: {full_duration} minutes\n" \
+               f"**Play Time (in-game)**: {int(game_duration)} minutes ({avg_duration} average)"
 
     # hardcode known gamertags to Discord message IDs
     def map_player_name(self, player):
