@@ -23,8 +23,17 @@ class LumberBot(Bot):
 
         self.most_recent_match_id = None # used for warzone win tracking
 
+        self.bglow_stats = {
+            "kills": 0,
+            "deaths": 0,
+            "matches": 0,
+            "damage": 0,
+            "sessionDuration": 0
+        }
+
         # eventually add loop in init to add all commands regardless of number (to avoid having to hardcode)
         self.add_command(self.clip)
+        self.add_command(self.session_stats)
 
         logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%H:%M:%S')
 
@@ -87,16 +96,26 @@ class LumberBot(Bot):
         api_session = self.authenticate_warzone_api(self.cod_email, self.cod_pw)
 
         # if API session is not successfully set up, don't proceed
-        # TO-DO: set up retries if session setup fails
+        # Error is already logged in the authenticate function
         if api_session is None:
             return
 
         base_URL = "https://my.callofduty.com/api/papi-client/"
         req_URL = base_URL + "crm/cod/v2/title/mw/platform/uno/gamer/" + self.cod_username + "/matches/wz/start/0/end/0/details"
 
+
+        # FOR TESTING
+        #self.most_recent_match_id = "1615512416848523671"
+
         # this API request will return Warzone matches played in the last week. Although there is a start and end in the
         # URL, they don't work as expected and there is very little documentation as to what these attributes do.
-        recent_matches = api_session.get(req_URL).json()["data"]["matches"]
+        try:
+            api_response = api_session.get(req_URL).json()
+            recent_matches = api_response["data"]["matches"]
+        except KeyError:
+            logging.error(f"Unable to retrieve recent matches from Warzone API. API responded with {api_response}")
+            return
+
         matches_checked = 0
 
         # the purpose of most_recent_match_id is to make sure we only process new matches added to the list (despite
@@ -109,35 +128,90 @@ class LumberBot(Bot):
                 if current_ID == self.most_recent_match_id: # we have processed all new matches in the list
                     break
 
+                # get basic match data
                 placement = match["playerStats"]["teamPlacement"]
-                if placement == 1: # we won a match
+                team = match["player"]["team"]
+                duration = round((match["utcEndSeconds"] - match["utcStartSeconds"]) / 60, 2)
+
+                # use match ID to get more detailed data/stats
+                match_url = base_URL + "crm/cod/v2/title/mw/platform/uno/fullMatch/wz/" + current_ID + "/en"
+                match_data = api_session.get(match_url).json()
+
+                try:
+                    all_player_stats = match_data["data"]["allPlayers"]
+                except KeyError:
+                    logging.error(f"Unable to retrieve match data from Warzone API. API responded with {match_data}")
+                    return
+
+                team_stats = {}
+
+                # collect stats for all players on my Warzone team
+                for player in all_player_stats:
+                    if player["player"]["team"] == team:
+                        playerStats = player["playerStats"]
+                        username = player["player"]["username"]
+                        team_stats[username] = [playerStats["kills"], playerStats["deaths"], playerStats["damageDone"]]
+
+                        # log my individual stats separately
+                        if username == "bglowniak":
+                            self.bglow_stats["matches"] += 1
+                            self.bglow_stats["kills"] += playerStats["kills"]
+                            self.bglow_stats["deaths"] += playerStats["deaths"]
+                            self.bglow_stats["damage"] += playerStats["damageDone"]
+                            self.bglow_stats["sessionDuration"] += duration
+
+                # if we won this match, send a congrats message to the channel
+                if placement == 1:
                     logging.info(f"Warzone win found with ID {current_ID}. Creating stats message.")
-                    team = match["player"]["team"]
-                    match_url = base_URL + "crm/cod/v2/title/mw/platform/uno/fullMatch/wz/" + current_ID + "/en"
-                    match_data = api_session.get(match_url).json()
-
-                    team_stats = {}
-
-                    for player in match_data["data"]["allPlayers"]:
-                        if player["player"]["team"] == team:
-                            playerStats = player["playerStats"]
-                            team_stats[player["player"]["username"]] = [playerStats["kills"], playerStats["deaths"], playerStats["damageDone"]]
-
-                    duration = round((match["utcEndSeconds"] - match["utcStartSeconds"]) / 60, 2)
                     stats = self.format_stats(team_stats)
                     await self.general_channels["Bot Test Server"].send(f"Congratulations on a recent Warzone win!\n**Match Duration**: {duration} minutes\n**Team Stats**:\n{stats}")
 
                 matches_checked += 1
 
+            # update most recent match ID to avoid re-processing any matches
             self.most_recent_match_id = recent_matches[0]["matchID"]
 
         logging.info(f"Win tracker run complete. {matches_checked} recent matches checked.")
 
     #################################    COMMANDS    #################################
+
     # eventually add command descriptions/help command?
     @command(name="clip")
     async def clip(ctx, args):
         pass
+
+    ''' @command(name="start_wz")
+    async def start(ctx):
+        pass
+
+    @command(name="end_wz")
+    async def end(ctx):
+        pass'''
+
+    @command(name="session_stats")
+    async def session_stats(ctx):
+        if ctx.guild.name != "Bot Test Server":
+            logging.info("Stats command invoked in normal server. Ignoring.")
+            return
+
+        stats = ctx.bot.bglow_stats
+        matches = stats["matches"]
+
+        if matches == 0:
+            logging.info("Stats command invoked with 0 matches logged. Skipping processing and informing user.")
+            await ctx.channel.send("No matches currently logged in session.")
+            return
+
+        kills = stats["kills"]
+        deaths = stats["deaths"]
+        duration = stats["sessionDuration"]
+        damage = stats["damage"]
+        kd_ratio = kills if deaths == 0 else round(kills / deaths, 2)
+        avg_damage = round(damage / matches, 2)
+        avg_duration = round(duration / matches, 2)
+
+        logging.info("Stats command invoked. Processing logged stats and sending message.")
+        await ctx.channel.send(f"Here are your current stats:\n**Matches Played**: {matches}\n**K/D**: {int(kills)}-{int(deaths)} ({kd_ratio})\n**Average Damage**: {avg_damage} ({int(damage)} total)\n**Play Time (in-game)**: {int(duration)} minutes ({avg_duration} average)")
 
     #################################    HELPERS    #################################
 
@@ -166,19 +240,23 @@ class LumberBot(Bot):
             kd_ratio = kills if deaths == 0 else kills / deaths
             damage = stats[2]
 
-            # hardcode known gamertags to Discord message IDs
-            if player == "bglowniak":
-                player = "<@!250017966928691211>"
-            elif player == "triplexlink":
-                player = "<@!273518554517602305>"
-            elif player == "funny_monkey998":
-                player = "<@!479298269110075433>"
-            elif player == "MisterDuV":
-                player = "<@!425035767350296578>"
-
+            player = self.map_player_name(player)
             format += f"    • {player}: {int(kills)}-{int(deaths)} ({kd_ratio} K/D), {int(damage)} damage.\n"
 
         return format
+
+    # hardcode known gamertags to Discord message IDs
+    def map_player_name(self, player):
+        if player == "bglowniak":
+            player = "<@!250017966928691211>"
+        elif player == "triplexlink":
+            player = "<@!273518554517602305>"
+        elif player == "funny_monkey998":
+            player = "<@!479298269110075433>"
+        elif player == "MisterDuV":
+            player = "<@!425035767350296578>"
+
+        return player
 
     # TO-DO: Add checks + retries for when these requests don't return a status code of 200
     def authenticate_warzone_api(self, email, password):
