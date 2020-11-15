@@ -22,18 +22,24 @@ class LumberBot(Bot):
         self.cod_username = os.getenv("COD_USERNAME")
         self.cod_pw = os.getenv("COD_AUTH")
 
-        self.most_recent_match_id = None # used for warzone win tracking
+        #self.most_recent_match_id = None # used for warzone win tracking
 
         # for testing
-        #self.most_recent_match_id = "1615512416848523671"
+        self.most_recent_match_id = "1615512416848523671"
 
+        #self.most_recent_match_id = "4021411067125475503"
+
+        # Session variables
         self.session_start_time = None
+        self.public_session = False # private session = messages will only be seen by me. Will not send individual stats messages in a public session
+        self.start_server = None # which server the start_wz command is invoked in
         self.bglow_stats = {
             "kills": 0,
             "deaths": 0,
             "matches": 0,
             "damage": 0,
-            "inGameDuration": 0
+            "inGameDuration": 0,
+            "teamPlacements": 0
         }
 
         # eventually add loop in init to add all commands regardless of number (to avoid having to hardcode)
@@ -158,21 +164,30 @@ class LumberBot(Bot):
                     if player["player"]["team"] == team:
                         playerStats = player["playerStats"]
                         username = player["player"]["username"]
-                        team_stats[username] = [playerStats["kills"], playerStats["deaths"], playerStats["damageDone"]]
+                        kills = playerStats["kills"] # putting this in var because we use it multiple times
+                        team_stats[username] = [kills, playerStats["deaths"], playerStats["damageDone"]]
 
                         # log my individual stats separately
                         if username == "bglowniak":
                             self.bglow_stats["matches"] += 1
-                            self.bglow_stats["kills"] += playerStats["kills"]
+                            self.bglow_stats["kills"] += kills
                             self.bglow_stats["deaths"] += playerStats["deaths"]
                             self.bglow_stats["damage"] += playerStats["damageDone"]
                             self.bglow_stats["inGameDuration"] += duration
+                            self.bglow_stats["teamPlacements"] += placement
+
+                        if kills >= 10:
+                            logging.info(f"Found a 10+ kill game for {username}. Sending congrats message.")
+                            discord_handle = self.map_player_name(username)
+                            await self.general_channels["Bot Test Server"].send(f"Congrats to {discord_handle} who has achieved **{int(kills)} kills** in a single Warzone match!")
 
                 # if we won this match, send a congrats message to the channel
                 if placement == 1:
                     logging.info(f"Warzone win found with ID {current_ID}. Creating stats message.")
+                    match_start_time = time.strftime("%m/%d %H:%M:%S", time.localtime(match["utcStartSeconds"]))
                     stats = self.format_team_stats(team_stats)
                     await self.general_channels["Bot Test Server"].send("Congratulations on a recent Warzone win!\n" \
+                                                                        f"**Match Start Time**: {match_start_time}\n" \
                                                                         f"**Match Duration**: {duration} minutes\n" \
                                                                         f"**Team Stats**:\n{stats}")
 
@@ -187,54 +202,78 @@ class LumberBot(Bot):
 
     @command(name="start_wz")
     async def start_wz(ctx):
+        if ctx.guild.name != "Bot Test Server":
+            logging.info("start_wz command invoked in normal server. Ignoring.")
+            return
+
         if ctx.bot.session_start_time is not None:
-            logging.info("\"start_wz\" command invoked, but there is already an active session.")
+            logging.info("start_wz command invoked, but there is already an active session.")
             await ctx.channel.send(f"There is already an active session that was started at {ctx.bot.formatted_start_time}")
             return
 
-        logging.info("Warzone session has started. Starting tracker. Good luck, team.")
+        ctx.bot.public_session = False # = (ctx.guild.name != "Bot Test Server")
+        ctx.bot.start_server = ctx.guild.name
+        session_type = "Public" if ctx.bot.public_session else "Private"
+
+        logging.info(f"{session_type} Warzone session has started. Starting tracker. Good luck, team.")
         ctx.bot.warzone_session_tracker.start()
         ctx.bot.session_start_time = time.localtime()
         await ctx.channel.send("Warzone tracker started. Good luck, team.")
 
     @command(name="end_wz")
     async def end_wz(ctx):
+        if ctx.guild.name != "Bot Test Server":
+            logging.info("end_wz command invoked in normal server. Ignoring.")
+            return
+
         if ctx.bot.session_start_time is None:
-            logging.info("\"end_wz\" command invoked, but there is currently no active session.")
+            logging.info("end_wz command invoked, but there is currently no active session.")
             await ctx.channel.send("There is currently no active session to end.")
             return
+
+        # a session can only be ended in the same server it was started in
+        # this block is currently unnecessary, but will be needed if I allow sessions to be activated in the normal server
+        if ctx.guild.name != ctx.bot.start_server:
+            logging.info("end_wz command invoked in server different from where it started.")
+            await ctx.channel.send("There is currently no active session to end.")
 
         logging.info("Warzone session has ended. Stopping tracker.")
         ctx.bot.warzone_session_tracker.cancel()
 
-        formatted_stats = ctx.bot.format_individual_stats(time.localtime())
-        if formatted_stats is None: # no matches logged during the session
-            await ctx.channel.send("Warzone tracker stopped. There are no matches to report final stats on.")
-        else:
+        num_matches = ctx.bot.bglow_stats["matches"]
+        if num_matches == 0:
+            await ctx.channel.send("Warzone tracker stopped. No matches were played.")
+        elif ctx.bot.public_session:
+            avg_placement = int(ctx.bot.bglow_stats["teamPlacements"] / num_matches)
+            await ctx.channel.send(f"Warzone tracker stopped. The team played {num_matches} games with an average placement of {avg_placement}.")
+        else: # the session is private, so we can send my individual stats
+            formatted_stats = ctx.bot.format_individual_stats(time.localtime())
             await ctx.channel.send(f"Warzone tracker stopped. Here are your final stats:\n{formatted_stats}")
 
         # reset session variables
         ctx.bot.session_start_time = None
+        ctx.bot.start_server = None
+        ctx.bot.public_session = False
         for key in ctx.bot.bglow_stats:
             ctx.bot.bglow_stats[key] = 0
 
     # return stats
     @command(name="session_stats")
     async def session_stats(ctx):
+        if ctx.guild.name != "Bot Test Server": # this command is only for private use
+            logging.info("Stats command invoked in normal server. Ignoring.")
+            return
+
         if ctx.bot.session_start_time is None:
             logging.info("Stats command invoked, but there is currently no active session.")
             await ctx.channel.send("There is currently no active session to report stats on.")
-            return
-
-        if ctx.guild.name != "Bot Test Server": # this command is only for private use
-            logging.info("Stats command invoked in normal server. Ignoring.")
             return
 
         formatted_stats = ctx.bot.format_individual_stats(time.localtime())
 
         if formatted_stats is None: # there were 0 matches to process
             logging.info("Stats command invoked with 0 matches logged. Skipping processing and informing user.")
-            await ctx.channel.send(f"No matches logged for active session.")
+            await ctx.channel.send("No matches logged for active session.")
             return
 
         logging.info("Stats command invoked. Processing logged stats and sending message.")
@@ -264,7 +303,7 @@ class LumberBot(Bot):
         for player, stats in player_dict.items():
             kills = stats[0]
             deaths = stats[1]
-            kd_ratio = kills if deaths == 0 else kills / deaths
+            kd_ratio = kills if deaths == 0 else round(kills / deaths, 2)
             damage = stats[2]
 
             player = self.map_player_name(player)
@@ -280,19 +319,21 @@ class LumberBot(Bot):
 
         kills = self.bglow_stats["kills"]
         deaths = self.bglow_stats["deaths"]
-        game_duration = self.bglow_stats["inGameDuration"]
+        game_duration = round(self.bglow_stats["inGameDuration"], 2)
         damage = self.bglow_stats["damage"]
         kd_ratio = kills if deaths == 0 else round(kills / deaths, 2)
         avg_damage = round(damage / matches, 2)
         avg_duration = round(game_duration / matches, 2)
         full_duration = round((time.mktime(current_time) - time.mktime(self.session_start_time)) / 60, 2)
+        avg_placement = int(self.bglow_stats["teamPlacements"] / matches)
 
         return f"**Session Start**: {self.formatted_start_time}\n" \
                f"**Matches Played**: {matches}\n" \
+               f"**Average Team Placement**: {avg_placement}\n" \
                f"**K/D**: {int(kills)}-{int(deaths)} ({kd_ratio})\n" \
                f"**Average Damage**: {avg_damage} ({int(damage)} total)\n" \
                f"**Total Session Duration**: {full_duration} minutes\n" \
-               f"**Play Time (in-game)**: {int(game_duration)} minutes ({avg_duration} average)"
+               f"**Play Time (in-game)**: {game_duration} minutes ({avg_duration} average)"
 
     # hardcode known gamertags to Discord message IDs
     def map_player_name(self, player):
