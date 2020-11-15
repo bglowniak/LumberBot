@@ -22,16 +22,15 @@ class LumberBot(Bot):
         self.cod_username = os.getenv("COD_USERNAME")
         self.cod_pw = os.getenv("COD_AUTH")
 
-        #self.most_recent_match_id = None # used for warzone win tracking
+        self.most_recent_match_id = None # used for warzone win tracking
 
         # for testing
-        self.most_recent_match_id = "1615512416848523671"
-
-        #self.most_recent_match_id = "4021411067125475503"
+        # self.most_recent_match_id = "1615512416848523671"
+        # self.most_recent_match_id = "4021411067125475503"
 
         # Session variables
         self.session_start_time = None
-        self.public_session = False # private session = messages will only be seen by me. Will not send individual stats messages in a public session
+        self.public_session = False # private session = messages will only be seen by me.
         self.start_server = None # which server the start_wz command is invoked in
         self.bglow_stats = {
             "kills": 0,
@@ -46,6 +45,7 @@ class LumberBot(Bot):
         self.add_command(self.session_stats)
         self.add_command(self.start_wz)
         self.add_command(self.end_wz)
+        self.add_command(self.clear_channel)
 
         logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%H:%M:%S')
 
@@ -107,7 +107,7 @@ class LumberBot(Bot):
 
     #################################    TASKS    #################################
 
-    # TO-DO: set up retries if API calls fail
+    # started and stopped via the start_wz and end_wz commands
     @tasks.loop(minutes=15.0)
     async def warzone_session_tracker(self):
         logging.info("Running Warzone Win Tracker")
@@ -179,14 +179,14 @@ class LumberBot(Bot):
                         if kills >= 10:
                             logging.info(f"Found a 10+ kill game for {username}. Sending congrats message.")
                             discord_handle = self.map_player_name(username)
-                            await self.general_channels["Bot Test Server"].send(f"Congrats to {discord_handle} who has achieved **{int(kills)} kills** in a single Warzone match!")
+                            await self.general_channels["lumber gang"].send(f"Congrats to {discord_handle} who has achieved **{int(kills)} kills** in a single Warzone match!")
 
                 # if we won this match, send a congrats message to the channel
                 if placement == 1:
                     logging.info(f"Warzone win found with ID {current_ID}. Creating stats message.")
                     match_start_time = time.strftime("%m/%d %H:%M:%S", time.localtime(match["utcStartSeconds"]))
                     stats = self.format_team_stats(team_stats)
-                    await self.general_channels["Bot Test Server"].send("Congratulations on a recent Warzone win!\n" \
+                    await self.general_channels["lumber gang"].send("Congratulations on a recent Warzone win!\n" \
                                                                         f"**Match Start Time**: {match_start_time}\n" \
                                                                         f"**Match Duration**: {duration} minutes\n" \
                                                                         f"**Team Stats**:\n{stats}")
@@ -200,6 +200,7 @@ class LumberBot(Bot):
 
     #################################    COMMANDS    #################################
 
+    # start a new Warzone session
     @command(name="start_wz")
     async def start_wz(ctx):
         if ctx.guild.name != "Bot Test Server":
@@ -220,6 +221,7 @@ class LumberBot(Bot):
         ctx.bot.session_start_time = time.localtime()
         await ctx.channel.send("Warzone tracker started. Good luck, team.")
 
+    # end a Warzone session, send stats, and then reset.
     @command(name="end_wz")
     async def end_wz(ctx):
         if ctx.guild.name != "Bot Test Server":
@@ -244,20 +246,16 @@ class LumberBot(Bot):
         if num_matches == 0:
             await ctx.channel.send("Warzone tracker stopped. No matches were played.")
         elif ctx.bot.public_session:
-            avg_placement = int(ctx.bot.bglow_stats["teamPlacements"] / num_matches)
+            avg_placement = int(round(ctx.bot.bglow_stats["teamPlacements"] / num_matches, 2))
             await ctx.channel.send(f"Warzone tracker stopped. The team played {num_matches} games with an average placement of {avg_placement}.")
         else: # the session is private, so we can send my individual stats
             formatted_stats = ctx.bot.format_individual_stats(time.localtime())
             await ctx.channel.send(f"Warzone tracker stopped. Here are your final stats:\n{formatted_stats}")
 
         # reset session variables
-        ctx.bot.session_start_time = None
-        ctx.bot.start_server = None
-        ctx.bot.public_session = False
-        for key in ctx.bot.bglow_stats:
-            ctx.bot.bglow_stats[key] = 0
+        ctx.bot.reset_session_variables()
 
-    # return stats
+    # return my individual stats. Only works in my private test server.
     @command(name="session_stats")
     async def session_stats(ctx):
         if ctx.guild.name != "Bot Test Server": # this command is only for private use
@@ -278,6 +276,11 @@ class LumberBot(Bot):
 
         logging.info("Stats command invoked. Processing logged stats and sending message.")
         await ctx.channel.send(f"Here are your current session stats:\n{formatted_stats}")
+
+    @command(name="clear_channel")
+    async def clear_channel(ctx):
+        logging.info(f"Clearing #{ctx.channel} in {ctx.guild.name}")
+        await ctx.channel.purge()
 
     #################################    HELPERS    #################################
 
@@ -325,7 +328,7 @@ class LumberBot(Bot):
         avg_damage = round(damage / matches, 2)
         avg_duration = round(game_duration / matches, 2)
         full_duration = round((time.mktime(current_time) - time.mktime(self.session_start_time)) / 60, 2)
-        avg_placement = int(self.bglow_stats["teamPlacements"] / matches)
+        avg_placement = int(round(self.bglow_stats["teamPlacements"] / matches, 2))
 
         return f"**Session Start**: {self.formatted_start_time}\n" \
                f"**Matches Played**: {matches}\n" \
@@ -348,7 +351,6 @@ class LumberBot(Bot):
 
         return player
 
-    # TO-DO: Add checks + retries for when these requests don't return a status code of 200
     def authenticate_warzone_api(self, email, password):
         api_session = requests.Session()
 
@@ -375,3 +377,10 @@ class LumberBot(Bot):
         else:
             logging.error(f"API session unable to be established with error code {response.status_code}")
             return None
+
+    def reset_session_variables(self):
+        self.session_start_time = None
+        self.start_server = None
+        self.public_session = False
+        for key in self.bglow_stats:
+            self.bglow_stats[key] = 0
