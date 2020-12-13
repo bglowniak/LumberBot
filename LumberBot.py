@@ -32,6 +32,7 @@ class LumberBot(Bot):
         self.session_start_time = None
         self.public_session = False # private session = messages will only be seen by me.
         self.start_server = None # which server the start_wz command is invoked in
+        self.wins = 0
         self.bglow_stats = {
             "kills": 0,
             "deaths": 0,
@@ -107,7 +108,7 @@ class LumberBot(Bot):
     #################################    TASKS    #################################
 
     # started and stopped via the start_wz and end_wz commands
-    @tasks.loop(minutes=15.0)
+    @tasks.loop(minutes=10.0)
     async def warzone_session_tracker(self):
         logging.info("Running Warzone Win Tracker")
         api_session = self.authenticate_warzone_api(self.cod_email, self.cod_pw)
@@ -181,14 +182,18 @@ class LumberBot(Bot):
 
                 # if we won this match, send a congrats message to the channel
                 if placement == 1:
+                    self.wins += 1
                     logging.info(f"Warzone win found with ID {current_ID}. Creating stats message.")
                     match_start_time = time.strftime("%m/%d %H:%M:%S", time.localtime(match["utcStartSeconds"]))
                     stats = self.format_team_stats(team_stats)
-                    await self.general_channels["lumber gang"].send("Congratulations on a recent Warzone win!\n" \
-                                                                        f"**Match Start Time**: {match_start_time}\n" \
-                                                                        f"**Match Duration**: {duration} minutes\n" \
-                                                                        f"**Team Stats**:\n{stats}")
-
+                    salute = random.choice(os.listdir(self.salute_directory))
+                    await self.general_channels["lumber gang"].send(content="Congratulations on a recent Warzone win!\n" \
+                                                                            f"**Match Start Time**: {match_start_time}\n" \
+                                                                            f"**Match Duration**: {duration} minutes\n" \
+                                                                            f"**Team Stats**:\n{stats}",
+                                                                    file=discord.File(self.salute_directory + "/" + salute))
+                    if wins == 3:
+                        await self.general_channels["lumber gang"].send("Ah shit, that's a triple dub. Good work team")
                 matches_checked += 1
 
             # update most recent match ID to avoid re-processing any matches
@@ -330,7 +335,7 @@ class LumberBot(Bot):
 
         return f"**Session Start**: {self.formatted_start_time}\n" \
                f"**Matches Played**: {matches}\n" \
-               f"**Average Team Placement**: {avg_placement}\n" \
+               f"**Average Team Placement**: {avg_placement} ({self.wins} wins)\n" \
                f"**K/D**: {int(kills)}-{int(deaths)} ({kd_ratio})\n" \
                f"**Average Damage**: {avg_damage} ({int(damage)} total)\n" \
                f"**Total Session Duration**: {full_duration} minutes\n"
@@ -379,5 +384,6 @@ class LumberBot(Bot):
         self.session_start_time = None
         self.start_server = None
         self.public_session = False
+        self.wins = 0
         for key in self.bglow_stats:
             self.bglow_stats[key] = 0
