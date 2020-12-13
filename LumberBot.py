@@ -37,7 +37,6 @@ class LumberBot(Bot):
             "deaths": 0,
             "matches": 0,
             "damage": 0,
-            "inGameDuration": 0,
             "teamPlacements": 0
         }
 
@@ -173,7 +172,6 @@ class LumberBot(Bot):
                             self.bglow_stats["kills"] += kills
                             self.bglow_stats["deaths"] += playerStats["deaths"]
                             self.bglow_stats["damage"] += playerStats["damageDone"]
-                            self.bglow_stats["inGameDuration"] += duration
                             self.bglow_stats["teamPlacements"] += placement
 
                         if kills >= 10:
@@ -322,9 +320,9 @@ class LumberBot(Bot):
 
         kills = self.bglow_stats["kills"]
         deaths = self.bglow_stats["deaths"]
-        game_duration = round(self.bglow_stats["inGameDuration"], 2)
         damage = self.bglow_stats["damage"]
         kd_ratio = kills if deaths == 0 else round(kills / deaths, 2)
+        avg_kills = round(kills / matches, 2)
         avg_damage = round(damage / matches, 2)
         avg_duration = round(game_duration / matches, 2)
         full_duration = round((time.mktime(current_time) - time.mktime(self.session_start_time)) / 60, 2)
@@ -335,8 +333,7 @@ class LumberBot(Bot):
                f"**Average Team Placement**: {avg_placement}\n" \
                f"**K/D**: {int(kills)}-{int(deaths)} ({kd_ratio})\n" \
                f"**Average Damage**: {avg_damage} ({int(damage)} total)\n" \
-               f"**Total Session Duration**: {full_duration} minutes\n" \
-               f"**Play Time (in-game)**: {game_duration} minutes ({avg_duration} average)"
+               f"**Total Session Duration**: {full_duration} minutes\n"
 
     # hardcode known gamertags to Discord message IDs
     def map_player_name(self, player):
