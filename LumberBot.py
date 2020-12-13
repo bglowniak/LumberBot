@@ -329,13 +329,13 @@ class LumberBot(Bot):
         kd_ratio = kills if deaths == 0 else round(kills / deaths, 2)
         avg_kills = round(kills / matches, 2)
         avg_damage = round(damage / matches, 2)
-        avg_duration = round(game_duration / matches, 2)
         full_duration = round((time.mktime(current_time) - time.mktime(self.session_start_time)) / 60, 2)
         avg_placement = int(round(self.bglow_stats["teamPlacements"] / matches, 2))
+        win_str = "win" if self.wins == 1 else "wins"
 
         return f"**Session Start**: {self.formatted_start_time}\n" \
                f"**Matches Played**: {matches}\n" \
-               f"**Average Team Placement**: {avg_placement} ({self.wins} wins)\n" \
+               f"**Average Team Placement**: {avg_placement} ({self.wins} {win_str})\n" \
                f"**K/D**: {int(kills)}-{int(deaths)} ({kd_ratio})\n" \
                f"**Average Damage**: {avg_damage} ({int(damage)} total)\n" \
                f"**Total Session Duration**: {full_duration} minutes\n"
