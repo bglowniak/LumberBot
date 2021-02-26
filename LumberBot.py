@@ -8,6 +8,7 @@ import re
 import requests
 import logging
 import time
+import json
 
 class LumberBot(Bot):
     def __init__(self, *args, **kwargs):
@@ -22,11 +23,9 @@ class LumberBot(Bot):
         self.cod_username = os.getenv("COD_USERNAME")
         self.cod_pw = os.getenv("COD_AUTH")
 
-        self.most_recent_match_id = None # used for warzone win tracking
+        self.debug = kwargs["debug"] 
 
-        # for testing
-        # self.most_recent_match_id = "1615512416848523671"
-        # self.most_recent_match_id = "4021411067125475503"
+        self.most_recent_match_id = None # used for warzone win tracking
 
         # Session variables
         self.session_start_time = None
@@ -61,6 +60,11 @@ class LumberBot(Bot):
     async def on_ready(self):
         logging.info(f'{self.user} has connected to Discord')
         self.general_channels = self.collect_general_channels()
+        if self.debug:
+            self.server = "Bot Test Server"
+        else:
+            self.server = "lumber gang"
+        logging.info(f"Debug mode: {self.debug}. Messages will default to {self.server}")
 
     # override on_message to implement some functionality outside of normal commands
     async def on_message(self, message):
@@ -108,7 +112,7 @@ class LumberBot(Bot):
     #################################    TASKS    #################################
 
     # started and stopped via the start_wz and end_wz commands
-    @tasks.loop(minutes=10.0)
+    @tasks.loop(minutes=8.0) # turned from 10 -> 8 to account for faster Rebirth matches
     async def warzone_session_tracker(self):
         logging.info("Running Warzone Win Tracker")
         api_session = self.authenticate_warzone_api(self.cod_email, self.cod_pw)
@@ -129,6 +133,11 @@ class LumberBot(Bot):
         except KeyError:
             logging.error(f"Unable to retrieve recent matches from Warzone API. API responded with {api_response}")
             return
+
+        # uncomment to dump API data to debug
+        # with open("dump.json", "w") as f:
+        #    f.write(json.dumps(recent_matches, indent=4))
+        # return
 
         matches_checked = 0
 
@@ -178,7 +187,7 @@ class LumberBot(Bot):
                         if kills >= 10:
                             logging.info(f"Found a 10+ kill game for {username}. Sending congrats message.")
                             discord_handle = self.map_player_name(username)
-                            await self.general_channels["lumber gang"].send(f"Congrats to {discord_handle} who has achieved **{int(kills)} kills** in a single Warzone match!")
+                            await self.general_channels[self.server].send(f"Congrats to {discord_handle} who has achieved **{int(kills)} kills** in a single Warzone match!")
 
                 # if we won this match, send a congrats message to the channel
                 if placement == 1:
@@ -187,13 +196,21 @@ class LumberBot(Bot):
                     match_start_time = time.strftime("%m/%d %H:%M:%S", time.localtime(match["utcStartSeconds"]))
                     stats = self.format_team_stats(team_stats)
                     salute = random.choice(os.listdir(self.salute_directory))
-                    await self.general_channels["lumber gang"].send(content="Congratulations on a recent Warzone win!\n" \
+
+                    map = match["map"]
+                    if map == "mp_don3":
+                        map = "Verdansk"
+                    elif map == "mp_escape2":
+                        map = "Rebirth"
+
+                    await self.general_channels[self.server].send(content="Congratulations on a recent Warzone win!\n" \
                                                                             f"**Match Start Time**: {match_start_time}\n" \
                                                                             f"**Match Duration**: {duration} minutes\n" \
+                                                                            f"**Map**: {map}\n" \
                                                                             f"**Team Stats**:\n{stats}",
                                                                     file=discord.File(self.salute_directory + "/" + salute))
-                    if wins == 3:
-                        await self.general_channels["lumber gang"].send("Ah shit, that's a triple dub. Good work team")
+                    if self.wins == 3:
+                        await self.general_channels[self.server].send("Ah shit, that's a triple dub. Good work team")
                 matches_checked += 1
 
             # update most recent match ID to avoid re-processing any matches
@@ -215,9 +232,9 @@ class LumberBot(Bot):
             await ctx.channel.send(f"There is already an active session that was started at {ctx.bot.formatted_start_time}")
             return
 
-        ctx.bot.public_session = False # = (ctx.guild.name != "Bot Test Server")
+        ctx.bot.public_session = False # = (ctx.guild.name != "Bot Test Server"), currently redundant
         ctx.bot.start_server = ctx.guild.name
-        session_type = "Public" if ctx.bot.public_session else "Private"
+        session_type = "Public" if ctx.bot.public_session else "Private" # currently redundant
 
         logging.info(f"{session_type} Warzone session has started. Starting tracker. Good luck, team.")
         ctx.bot.warzone_session_tracker.start()
@@ -350,6 +367,8 @@ class LumberBot(Bot):
             player = "<@!479298269110075433>"
         elif player == "MisterDuV":
             player = "<@!425035767350296578>"
+        elif player =="Sharkyplace":
+            player = "<@!545430460860334082>"
 
         return player
 
