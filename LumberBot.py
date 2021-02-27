@@ -59,7 +59,7 @@ class LumberBot(Bot):
 
     async def on_ready(self):
         logging.info(f'{self.user} has connected to Discord')
-        self.general_channels = self.collect_general_channels()
+        self.default_channels = self.collect_default_channels()
         if self.debug:
             self.server = "Bot Test Server"
         else:
@@ -187,7 +187,7 @@ class LumberBot(Bot):
                         if kills >= 10:
                             logging.info(f"Found a 10+ kill game for {username}. Sending congrats message.")
                             discord_handle = self.map_player_name(username)
-                            await self.general_channels[self.server].send(f"Congrats to {discord_handle} who has achieved **{int(kills)} kills** in a single Warzone match!")
+                            await self.default_channels[self.server].send(f"Congrats to {discord_handle} who has achieved **{int(kills)} kills** in a single Warzone match!")
 
                 # if we won this match, send a congrats message to the channel
                 if placement == 1:
@@ -203,14 +203,14 @@ class LumberBot(Bot):
                     elif map == "mp_escape2":
                         map = "Rebirth"
 
-                    await self.general_channels[self.server].send(content="Congratulations on a recent Warzone win!\n" \
+                    await self.default_channels[self.server].send(content="Congratulations on a recent Warzone win!\n" \
                                                                             f"**Match Start Time**: {match_start_time}\n" \
                                                                             f"**Match Duration**: {duration} minutes\n" \
                                                                             f"**Map**: {map}\n" \
                                                                             f"**Team Stats**:\n{stats}",
                                                                     file=discord.File(self.salute_directory + "/" + salute))
-                    if self.wins == 3:
-                        await self.general_channels[self.server].send("Ah shit, that's a triple dub. Good work team")
+                    if self.wins % 3 == 0:
+                        await self.default_channels[self.server].send("Ah shit, that's a triple dub. Good work team")
                 matches_checked += 1
 
             # update most recent match ID to avoid re-processing any matches
@@ -310,11 +310,11 @@ class LumberBot(Bot):
             if word == "big" and index + 1 != len(words):
                 return words[index + 1]
 
-    def collect_general_channels(self):
+    def collect_default_channels(self):
         channels = {}
         for guild in self.guilds:
             for channel in guild.text_channels:
-                if channel.name == "general":
+                if (guild.name == "lumber gang" and channel.name == "wz_bot") or (guild.name == "Bot Test Server" and channel.name == "general"):
                     channels[guild.name] = channel
 
         return channels
