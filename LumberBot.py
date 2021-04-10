@@ -19,9 +19,13 @@ class LumberBot(Bot):
         load_dotenv()
         self.mention_id = os.getenv("BOT_MENTION_ID")
         self.salute_directory = os.getenv("SALUTE_DIRECTORY")
-        self.cod_email = os.getenv("COD_EMAIL")
         self.cod_username = os.getenv("COD_USERNAME")
+
+        # needed for authentication to API. See authenticate_warzone_api function
+        self.cod_email = os.getenv("COD_EMAIL")
         self.cod_pw = os.getenv("COD_AUTH")
+        self.auth_token = os.getenv("AUTH_TOKEN")
+        self.device_id = os.getenv("DEVICE_ID")
 
         self.debug = kwargs["debug"] 
 
@@ -113,25 +117,39 @@ class LumberBot(Bot):
 
     # started and stopped via the start_wz and end_wz commands
     @tasks.loop(minutes=8.0) # turned from 10 -> 8 to account for faster Rebirth matches
-    async def warzone_session_tracker(self):
-        logging.info("Running Warzone Win Tracker")
-        api_session = self.authenticate_warzone_api(self.cod_email, self.cod_pw)
+    async def warzone_session_tracker(self, api_session):
+        logging.info("Running Warzone Win Tracker loop")
 
-        # if API session is not successfully set up, don't proceed
-        # Error is already logged in the authenticate function
-        if api_session is None:
-            return
-
+        # collect Warzone matches played in the last week. 
+        # start and end parameters don't actually work as expected
         base_URL = "https://my.callofduty.com/api/papi-client/"
         req_URL = base_URL + "crm/cod/v2/title/mw/platform/uno/gamer/" + self.cod_username + "/matches/wz/start/0/end/0/details"
+        resp = api_session.get(req_URL)
 
-        # this API request will return Warzone matches played in the last week. Although there is a start and end in the
-        # URL, they don't work as expected and there is very little documentation as to what these attributes do.
+        if resp.status_code != 200:
+            logging.error(f"Unable to retrieve data from Warzone API. API responded with {resp.status_code}")
+            return
+
+        api_data = resp.json()
+        
+        # confirm that API is still authenticated and that response is as expected
         try:
-            api_response = api_session.get(req_URL).json()
-            recent_matches = api_response["data"]["matches"]
+            if api_data["status"] == "success":
+                recent_matches = api_data["data"]["matches"]
+                logging.info("Match data successfully retrieved.")
+            elif api_data["data"]["message"] == "Not permitted: not authenticated":
+                logging.error("API not authenticated. Attempting to reconnect.")
+                if not self.authenticate_session(api_session):
+                    logging.error("API authentication failed three times. Will retry on next iteration.")
+                    return
+                else:
+                    logging.info("Restarting tracker.")
+                    self.warzone_session_tracker.restart(api_session)
+            else:
+                logging.error(f"API returned 200 status code but there was an unknown error. API responded with {api_data}")
+                return
         except KeyError:
-            logging.error(f"Unable to retrieve recent matches from Warzone API. API responded with {api_response}")
+            logging.error(f"Error indexing API response - check to see if expected key/values have changed. API responded with {api_data}")
             return
 
         # uncomment to dump API data to debug
@@ -141,8 +159,7 @@ class LumberBot(Bot):
 
         matches_checked = 0
 
-        # the purpose of most_recent_match_id is to make sure we only process new matches added to the list (despite
-        # pulling the full list each time)
+        # the purpose of most_recent_match_id is to make sure we only process new matches added to the list
         if self.most_recent_match_id == None:
             self.most_recent_match_id = recent_matches[0]["matchID"]
         elif recent_matches[0]["matchID"] != self.most_recent_match_id: # there are new matches to process
@@ -160,11 +177,12 @@ class LumberBot(Bot):
                 match_url = base_URL + "crm/cod/v2/title/mw/platform/uno/fullMatch/wz/" + current_ID + "/en"
                 match_data = api_session.get(match_url).json()
 
+                # no API auth or response checks here - if we don't get the expected data, just skip
                 try:
                     all_player_stats = match_data["data"]["allPlayers"]
                 except KeyError:
                     logging.error(f"Unable to retrieve match data from Warzone API. API responded with {match_data}")
-                    return
+                    continue
 
                 team_stats = {}
 
@@ -236,10 +254,18 @@ class LumberBot(Bot):
         ctx.bot.start_server = ctx.guild.name
         session_type = "Public" if ctx.bot.public_session else "Private" # currently redundant
 
-        logging.info(f"{session_type} Warzone session has started. Starting tracker. Good luck, team.")
-        ctx.bot.warzone_session_tracker.start()
-        ctx.bot.session_start_time = time.localtime()
-        await ctx.channel.send("Warzone tracker started. Good luck, team.")
+        logging.info("start_wz invoked. Attempting to authenticate to the WZ API.")
+
+        # create new API session and authenticate
+        tracker_session = requests.Session()
+        if not ctx.bot.authenticate_session(tracker_session):
+            logging.error("API authentication failed three times. Tracker not started.")
+            await ctx.channel.send("API authentication failed three times. Tracker not started.")
+        else:
+            logging.info(f"Starting {session_type} Warzone session.")
+            ctx.bot.warzone_session_tracker.start(tracker_session)
+            ctx.bot.session_start_time = time.localtime()
+            await ctx.channel.send("Warzone tracker started. Good luck, team.")
 
     # end a Warzone session, send stats, and then reset.
     @command(name="end_wz")
@@ -372,32 +398,41 @@ class LumberBot(Bot):
 
         return player
 
-    def authenticate_warzone_api(self, email, password):
-        api_session = requests.Session()
+    # takes in a session object and attempts to set the required cookies to make WZ API calls
+    def authenticate_warzone_api(self, session):
+        # how to regenerate device_id and auth_token if needed
+        #device_id = hex(random.getrandbits(128)).lstrip("0x")
+        #payload =  {"deviceId": device_id}
+        #resp = s.post('https://profile.callofduty.com/cod/mapp/registerDevice', json=payload)
+        #auth_token = resp.json()['data']['authHeader']
 
-        # Get CSRF Token for subsequent requests
-        r = api_session.get("https://profile.callofduty.com/cod/login")
-        XSRF_TOKEN = api_session.cookies["XSRF-TOKEN"]
-
-        # Authenticate to the COD API
-        login_url = "https://profile.callofduty.com/do_login?new_SiteId=cod"
-        payload = {
-            "username": email,
-            "password": password,
-            "remember_me": "true",
-            "_csrf": XSRF_TOKEN
+        headers = {
+            "Authorization": f"Bearer {self.auth_token}",
+            "x_cod_device_id" : self.device_id,
         }
 
-        # a successful post request will set the atkn and rtkn cookies in the Session variable
-        # this authenticates future API requests made with the same Session
-        response = api_session.post(login_url, data=payload)
+        data = {'email': self.cod_email, 'password': self.cod_pw}
+        response = session.post('https://profile.callofduty.com/cod/mapp/login', headers=headers, json=data)
 
-        if response.status_code == 200:
+        if response.status_code == 200 and response.json()["success"] == True:
             logging.info("API Session successfully authenticated")
-            return api_session
         else:
-            logging.error(f"API session unable to be established with error code {response.status_code}")
-            return None
+            logging.error(f"API session unable to be established. API returned {response.text}")
+            raise Exception("API authentication failure")
+
+    # helper function for session authentication. Retries 3 times in case of failure.
+    def authenticate_session(self, session):
+        connecting = True
+        attempts = 0
+        while connecting and attempts < 3:
+            try:
+                self.authenticate_warzone_api(session)
+                connecting = False
+            except:
+                attempts += 1
+                if attempts < 3: time.sleep(5) # space out attempts
+        
+        return (attempts != 3)
 
     def reset_session_variables(self):
         self.session_start_time = None
