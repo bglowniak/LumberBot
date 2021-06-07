@@ -27,7 +27,7 @@ class LumberBot(Bot):
         self.auth_token = os.getenv("AUTH_TOKEN")
         self.device_id = os.getenv("DEVICE_ID")
 
-        self.debug = kwargs["debug"] 
+        self.debug = kwargs["debug"]
 
         self.most_recent_match_id = None # used for warzone win tracking
 
@@ -120,7 +120,7 @@ class LumberBot(Bot):
     async def warzone_session_tracker(self, api_session):
         logging.info("Running Warzone Win Tracker loop")
 
-        # collect Warzone matches played in the last week. 
+        # collect Warzone matches played in the last week.
         # start and end parameters don't actually work as expected
         base_URL = "https://my.callofduty.com/api/papi-client/"
         req_URL = base_URL + "crm/cod/v2/title/mw/platform/uno/gamer/" + self.cod_username + "/matches/wz/start/0/end/0/details"
@@ -131,7 +131,7 @@ class LumberBot(Bot):
             return
 
         api_data = resp.json()
-        
+
         # confirm that API is still authenticated and that response is as expected
         try:
             if api_data["status"] == "success":
@@ -216,9 +216,9 @@ class LumberBot(Bot):
                     salute = random.choice(os.listdir(self.salute_directory))
 
                     map = match["map"]
-                    if map == "mp_don3":
+                    if map == "mp_don3" or map == "mp_don4":
                         map = "Verdansk"
-                    elif map == "mp_escape2":
+                    elif map == "mp_escape2" or map == "mp_escape3":
                         map = "Rebirth"
 
                     await self.default_channels[self.server].send(content="Congratulations on a recent Warzone win!\n" \
@@ -393,8 +393,10 @@ class LumberBot(Bot):
             player = "<@!479298269110075433>"
         elif player == "MisterDuV":
             player = "<@!425035767350296578>"
-        elif player =="Sharkyplace":
+        elif player == "Sharkyplace":
             player = "<@!545430460860334082>"
+        elif player == "TetoTeto":
+            player = "<@!483853566281383946>"
 
         return player
 
@@ -431,7 +433,7 @@ class LumberBot(Bot):
             except:
                 attempts += 1
                 if attempts < 3: time.sleep(5) # space out attempts
-        
+
         return (attempts != 3)
 
     def reset_session_variables(self):
