@@ -11,7 +11,7 @@ import time
 import json
 
 from auth_helpers import authenticate_session
-from stat_helpers import format_team_stats, format_time, format_session_stats, format_individual_stats, map_player_name
+from stat_helpers import *
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +32,9 @@ class LumberBot(Bot):
 
         self.debug = kwargs["debug"]
 
-        self.most_recent_match_id = None # used for warzone win tracking
+        #self.most_recent_match_id = None # used for warzone win tracking
         #self.most_recent_match_id = "9429061249485592100"
+        self.most_recent_match_id = "10792965779580188529"
 
         # track cumulative stats throughout a session
         self.stats_dict = {
@@ -41,12 +42,15 @@ class LumberBot(Bot):
             "matches": 0,
             "team_placements": 0,
             "session_start": None,
+            "single_game_max_kills": ("", 0),
+            "single_game_max_deaths": ("", 0),
             "players": {}
         }
 
         # eventually add loop in init to add all commands regardless of number (to avoid having to hardcode)
         self.add_command(self.session_stats)
         self.add_command(self.player_stats)
+        self.add_command(self.awards)
         self.add_command(self.start_wz)
         self.add_command(self.end_wz)
         self.add_command(self.clear_channel)
@@ -193,26 +197,47 @@ class LumberBot(Bot):
                     logging.error(f"Unable to retrieve match data from Warzone API. API responded with {match_data}")
                     continue
 
-                team_stats = {}
+                # collect individual match stats to report in case of win
+                match_stats_dict = {}
 
                 # collect stats for all players on my Warzone team
                 for player in all_player_stats:
                     if player["player"]["team"] == team:
                         player_stats = player["playerStats"]
                         username = player["player"]["username"]
+
                         kills = player_stats["kills"]
+                        deaths = player_stats["deaths"]
+                        damage = player_stats["damageDone"]
 
                         # format stats for individual match
-                        team_stats[username] = [kills, player_stats["deaths"], player_stats["damageDone"]]
+                        match_stats_dict[username] = {"kills": kills, "deaths": deaths, "damage": damage}
 
                         if not username in self.stats_dict["players"]:
-                            self.stats_dict["players"][username] = { "kills": 0, "deaths": 0, "damage": 0, "individual_matches": 0 }
+                            self.stats_dict["players"][username] = { 
+                                                                        "kills": 0, 
+                                                                        "deaths": 0, 
+                                                                        "damage": 0, 
+                                                                        "individual_matches": 0,
+                                                                        "headshots": 0,
+                                                                        "assists": 0,
+                                                                        "damage_taken": 0
+                                                                   }
 
                         # log cumulative stats for session
                         self.stats_dict["players"][username]["kills"] += kills
-                        self.stats_dict["players"][username]["deaths"] += player_stats["deaths"]
-                        self.stats_dict["players"][username]["damage"] += player_stats["damageDone"]
+                        self.stats_dict["players"][username]["deaths"] += deaths
+                        self.stats_dict["players"][username]["damage"] += damage
                         self.stats_dict["players"][username]["individual_matches"] += 1
+                        self.stats_dict["players"][username]["headshots"] += player_stats["headshots"]
+                        self.stats_dict["players"][username]["assists"] += player_stats["assists"]
+                        self.stats_dict["players"][username]["damage_taken"] += player_stats["damageTaken"]
+
+                        if kills > self.stats_dict["single_game_max_kills"][1]:
+                            self.stats_dict["single_game_max_kills"] = (username, kills)
+                        
+                        if deaths > self.stats_dict["single_game_max_deaths"][1]:
+                            self.stats_dict["single_game_max_deaths"] = (username, deaths)
 
                         if kills >= 10:
                             logging.info(f"Found a 10+ kill game for {username}. Sending congrats message.")
@@ -224,7 +249,7 @@ class LumberBot(Bot):
                     self.stats_dict["wins"] += 1
                     logging.info(f"Warzone win found with ID {current_ID}. Creating stats message.")
                     match_start_time = time.strftime("%m/%d %H:%M:%S", time.localtime(match["utcStartSeconds"]))
-                    stats = format_team_stats(team_stats)
+                    stats = format_win_message_stats(match_stats_dict)
                     salute = random.choice(os.listdir(self.salute_directory))
 
                     map = match["map"]
@@ -276,7 +301,7 @@ class LumberBot(Bot):
             ctx.bot.session_start_time = time.localtime()
             await ctx.channel.send("Warzone tracker started. Good luck, team.")
 
-    # end a Warzone session, send stats, and then reset.
+    # end a Warzone session and reset.
     # can only be invoked in private test server
     @command(name="end_wz")
     async def end_wz(ctx):
@@ -296,8 +321,7 @@ class LumberBot(Bot):
         if num_matches == 0:
             await ctx.channel.send("Warzone tracker stopped. No matches were played.")
         else:
-            formatted_stats = format_individual_stats(ctx.bot.stats_dict, time.localtime(), "bglowniak")
-            await ctx.channel.send(f"Warzone tracker stopped. Here are your final stats:\n{formatted_stats}")
+            await ctx.channel.send(f"Warzone tracker stopped. Good work out there.")
 
         # reset session variables
         ctx.bot.reset_session_variables()
@@ -305,10 +329,6 @@ class LumberBot(Bot):
     # return team's cumulative stats
     @command(name="session_stats")
     async def session_stats(ctx):
-        if ctx.guild.name != "Bot Test Server": # this command is only for private use
-            logging.info("Stats command invoked in normal server. Ignoring.")
-            return
-
         if ctx.bot.session_start_time is None:
             logging.info("session_stats command invoked, but there is currently no active session.")
             await ctx.channel.send("There is currently no active session to report stats on.")
@@ -324,13 +344,8 @@ class LumberBot(Bot):
         await ctx.channel.send(formatted_stats)
 
     # return cumulative stats of an individual player
-    # add --all input
     @command(name="player_stats")
-    async def player_stats(ctx, username):
-        if ctx.guild.name != "Bot Test Server": # this command is only for private use
-            logging.info("Stats command invoked in normal server. Ignoring.")
-            return
-
+    async def player_stats(ctx, username_arg):
         if ctx.bot.session_start_time is None:
             logging.info("player_stats command invoked, but there is currently no active session.")
             await ctx.channel.send("There is no active session to report stats on.")
@@ -341,12 +356,17 @@ class LumberBot(Bot):
             await ctx.channel.send("No matches have been played.")
             return
 
-        if username not in ctx.bot.stats_dict["players"]:
+        if username_arg == "--all" or username_arg == "-a": 
+            formatted_stats = ""
+            for player in ctx.bot.stats_dict["players"].keys():
+                formatted_stats += format_individual_stats(ctx.bot.stats_dict, player) + "\n"
+        elif username_arg in ctx.bot.stats_dict["players"]:
+            formatted_stats = format_individual_stats(ctx.bot.stats_dict, username_arg)
+        else:
             logging.info("player_stats command invoked, but no stats were found for inputted username.")
-            await ctx.channel.send(f"{username} has not played any matches. No stats to report.")
+            await ctx.channel.send(f"{username_arg} has not played any matches. No stats to report.")
             return
 
-        formatted_stats = format_individual_stats(ctx.bot.stats_dict, username)
         logging.info("player_stats successfully invoked. Sending message.")
         await ctx.channel.send(formatted_stats)
 
@@ -358,6 +378,22 @@ class LumberBot(Bot):
             return
 
         raise error
+
+    @command(name="awards")
+    async def awards(ctx):
+        if ctx.bot.session_start_time is None:
+            logging.info("Awards command invoked, but there is currently no active session.")
+            await ctx.channel.send("There is no active session to report stats on.")
+            return
+
+        if ctx.bot.stats_dict["matches"] == 0:
+            logging.info("Awards command invoked, but no matches have been played.")
+            await ctx.channel.send("No matches have been played.")
+            return
+
+        awards_message = format_awards(ctx.bot.stats_dict)
+        logging.info("Awards successfully invoked. Sending message.")
+        await ctx.channel.send(awards_message)
 
     @command(name="clear_channel")
     async def clear_channel(ctx):
@@ -387,4 +423,6 @@ class LumberBot(Bot):
         self.stats_dict["wins"] = 0
         self.stats_dict["team_placements"] = 0
         self.stats_dict["matches"] = 0
+        self.stats_dict["single_game_max_kills"] = ("", 0)
+        self.stats_dict["single_game_max_deaths"] = ("", 0)
         self.stats_dict["players"] = {}
