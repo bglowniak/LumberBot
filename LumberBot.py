@@ -32,9 +32,9 @@ class LumberBot(Bot):
 
         self.debug = kwargs["debug"]
 
-        #self.most_recent_match_id = None # used for warzone win tracking
+        self.most_recent_match_id = None # used for warzone win tracking
         #self.most_recent_match_id = "9429061249485592100"
-        self.most_recent_match_id = "10792965779580188529"
+        #self.most_recent_match_id = "10792965779580188529"
 
         # track cumulative stats throughout a session
         self.stats_dict = {
@@ -395,6 +395,11 @@ class LumberBot(Bot):
         logging.info("Awards successfully invoked. Sending message.")
         await ctx.channel.send(awards_message)
 
+    @command(name="get_clip")
+    async def get_clip(ctx, username_arg):
+        logger.info("get_clip command not yet implemented.")
+        return
+    
     @command(name="clear_channel")
     async def clear_channel(ctx):
         logging.info(f"Clearing #{ctx.channel} in {ctx.guild.name}")
