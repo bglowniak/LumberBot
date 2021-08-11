@@ -1,6 +1,6 @@
 import discord
 from discord.ext import tasks
-from discord.ext.commands import Bot, command, CommandNotFound
+from discord.ext.commands import Bot, command, CommandNotFound, MissingRequiredArgument
 from dotenv import load_dotenv
 import os
 import random
@@ -9,6 +9,11 @@ import requests
 import logging
 import time
 import json
+
+from auth_helpers import authenticate_session
+from stat_helpers import format_team_stats, format_time, format_session_stats, format_individual_stats, map_player_name
+
+logger = logging.getLogger(__name__)
 
 class LumberBot(Bot):
     def __init__(self, *args, **kwargs):
@@ -22,42 +27,41 @@ class LumberBot(Bot):
         self.cod_username = os.getenv("COD_USERNAME")
 
         # needed for authentication to API. See authenticate_warzone_api function
-        self.cod_email = os.getenv("COD_EMAIL")
-        self.cod_pw = os.getenv("COD_AUTH")
-        self.auth_token = os.getenv("AUTH_TOKEN")
-        self.device_id = os.getenv("DEVICE_ID")
+        self.atkn = os.getenv("ATKN")
+        self.sso = os.getenv("ACT_SSO_COOKIE")
 
         self.debug = kwargs["debug"]
 
         self.most_recent_match_id = None # used for warzone win tracking
+        #self.most_recent_match_id = "9429061249485592100"
 
-        # Session variables
-        self.session_start_time = None
-        self.public_session = False # private session = messages will only be seen by me.
-        self.start_server = None # which server the start_wz command is invoked in
-        self.wins = 0
-        self.bglow_stats = {
-            "kills": 0,
-            "deaths": 0,
+        # track cumulative stats throughout a session
+        self.stats_dict = {
+            "wins": 0,
             "matches": 0,
-            "damage": 0,
-            "teamPlacements": 0
+            "team_placements": 0,
+            "session_start": None,
+            "players": {}
         }
 
         # eventually add loop in init to add all commands regardless of number (to avoid having to hardcode)
         self.add_command(self.session_stats)
+        self.add_command(self.player_stats)
         self.add_command(self.start_wz)
         self.add_command(self.end_wz)
         self.add_command(self.clear_channel)
 
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%H:%M:%S')
+    @property
+    def session_start_time(self):
+        return self.stats_dict["session_start"]
+
+    @session_start_time.setter
+    def session_start_time(self, new_time):
+        self.stats_dict["session_start"] = new_time
 
     @property
     def formatted_start_time(self):
-        if self.session_start_time is None:
-            return None
-
-        return time.strftime("%m/%d %H:%M:%S", self.session_start_time)
+        return format_time(self.session_start_time)
 
     #################################    EVENTS    #################################
 
@@ -68,7 +72,7 @@ class LumberBot(Bot):
             self.server = "Bot Test Server"
         else:
             self.server = "lumber gang"
-        logging.info(f"Debug mode: {self.debug}. Messages will default to {self.server}")
+        logging.info(f"Debug mode: {self.debug}. Win messages will default to {self.server}")
 
     # override on_message to implement some functionality outside of normal commands
     async def on_message(self, message):
@@ -106,11 +110,15 @@ class LumberBot(Bot):
         # once we have checked the full message, process any commands that may be present
         await self.process_commands(message)
 
-    # add help command functionality at some point
+    # general command error catch-all
     async def on_command_error(self, ctx, error):
         if isinstance(error, CommandNotFound):
-            logging.warning(f"Command in message \"{ctx.message.content}\" not found. Ignoring.")
+            logging.debug(f"Command in message \"{ctx.message.content}\" not found. Ignoring.")
             return
+        if isinstance(error, MissingRequiredArgument):
+            # this error is handled in each specific command's error handler
+            return
+
         raise error
 
     #################################    TASKS    #################################
@@ -138,13 +146,11 @@ class LumberBot(Bot):
                 recent_matches = api_data["data"]["matches"]
                 logging.info("Match data successfully retrieved.")
             elif api_data["data"]["message"] == "Not permitted: not authenticated":
-                logging.error("API not authenticated. Attempting to reconnect.")
-                if not self.authenticate_session(api_session):
-                    logging.error("API authentication failed three times. Will retry on next iteration.")
-                    return
-                else:
-                    logging.info("Restarting tracker.")
-                    self.warzone_session_tracker.restart(api_session)
+                logging.error("API not authenticated. Please try re-generating tokens:")
+                self.atkn = input("ATKN: ")
+                self.sso = input("ACT_SSO_COOKIE: ")
+                authenticate_session(api_session, self.atkn, self.sso)
+                self.warzone_session_tracker.restart(api_session)
             else:
                 logging.error(f"API returned 200 status code but there was an unknown error. API responded with {api_data}")
                 return
@@ -152,7 +158,7 @@ class LumberBot(Bot):
             logging.error(f"Error indexing API response - check to see if expected key/values have changed. API responded with {api_data}")
             return
 
-        # uncomment to dump API data to debug
+        #uncomment to dump API data to debug
         # with open("dump.json", "w") as f:
         #    f.write(json.dumps(recent_matches, indent=4))
         # return
@@ -168,8 +174,11 @@ class LumberBot(Bot):
                 if current_ID == self.most_recent_match_id: # we have processed all new matches in the list
                     break
 
+                self.stats_dict["matches"] += 1
+
                 # get basic match data
                 placement = match["playerStats"]["teamPlacement"]
+                self.stats_dict["team_placements"] += placement
                 team = match["player"]["team"]
                 duration = round((match["utcEndSeconds"] - match["utcStartSeconds"]) / 60, 2)
 
@@ -189,30 +198,33 @@ class LumberBot(Bot):
                 # collect stats for all players on my Warzone team
                 for player in all_player_stats:
                     if player["player"]["team"] == team:
-                        playerStats = player["playerStats"]
+                        player_stats = player["playerStats"]
                         username = player["player"]["username"]
-                        kills = playerStats["kills"] # putting this in var because we use it multiple times
-                        team_stats[username] = [kills, playerStats["deaths"], playerStats["damageDone"]]
+                        kills = player_stats["kills"]
 
-                        # log my individual stats separately
-                        if username == "bglowniak":
-                            self.bglow_stats["matches"] += 1
-                            self.bglow_stats["kills"] += kills
-                            self.bglow_stats["deaths"] += playerStats["deaths"]
-                            self.bglow_stats["damage"] += playerStats["damageDone"]
-                            self.bglow_stats["teamPlacements"] += placement
+                        # format stats for individual match
+                        team_stats[username] = [kills, player_stats["deaths"], player_stats["damageDone"]]
+
+                        if not username in self.stats_dict["players"]:
+                            self.stats_dict["players"][username] = { "kills": 0, "deaths": 0, "damage": 0, "individual_matches": 0 }
+
+                        # log cumulative stats for session
+                        self.stats_dict["players"][username]["kills"] += kills
+                        self.stats_dict["players"][username]["deaths"] += player_stats["deaths"]
+                        self.stats_dict["players"][username]["damage"] += player_stats["damageDone"]
+                        self.stats_dict["players"][username]["individual_matches"] += 1
 
                         if kills >= 10:
                             logging.info(f"Found a 10+ kill game for {username}. Sending congrats message.")
-                            discord_handle = self.map_player_name(username)
+                            discord_handle = map_player_name(username)
                             await self.default_channels[self.server].send(f"Congrats to {discord_handle} who has achieved **{int(kills)} kills** in a single Warzone match!")
 
                 # if we won this match, send a congrats message to the channel
                 if placement == 1:
-                    self.wins += 1
+                    self.stats_dict["wins"] += 1
                     logging.info(f"Warzone win found with ID {current_ID}. Creating stats message.")
                     match_start_time = time.strftime("%m/%d %H:%M:%S", time.localtime(match["utcStartSeconds"]))
-                    stats = self.format_team_stats(team_stats)
+                    stats = format_team_stats(team_stats)
                     salute = random.choice(os.listdir(self.salute_directory))
 
                     map = match["map"]
@@ -227,7 +239,7 @@ class LumberBot(Bot):
                                                                             f"**Map**: {map}\n" \
                                                                             f"**Team Stats**:\n{stats}",
                                                                     file=discord.File(self.salute_directory + "/" + salute))
-                    if self.wins % 3 == 0:
+                    if self.stats_dict["wins"] % 3 == 0:
                         await self.default_channels[self.server].send("Ah shit, that's a triple dub. Good work team")
                 matches_checked += 1
 
@@ -239,6 +251,7 @@ class LumberBot(Bot):
     #################################    COMMANDS    #################################
 
     # start a new Warzone session
+    # can only be invoked in private test server
     @command(name="start_wz")
     async def start_wz(ctx):
         if ctx.guild.name != "Bot Test Server":
@@ -250,24 +263,21 @@ class LumberBot(Bot):
             await ctx.channel.send(f"There is already an active session that was started at {ctx.bot.formatted_start_time}")
             return
 
-        ctx.bot.public_session = False # = (ctx.guild.name != "Bot Test Server"), currently redundant
-        ctx.bot.start_server = ctx.guild.name
-        session_type = "Public" if ctx.bot.public_session else "Private" # currently redundant
-
         logging.info("start_wz invoked. Attempting to authenticate to the WZ API.")
 
         # create new API session and authenticate
         tracker_session = requests.Session()
-        if not ctx.bot.authenticate_session(tracker_session):
+        if not authenticate_session(tracker_session, ctx.bot.atkn, ctx.bot.sso):
             logging.error("API authentication failed three times. Tracker not started.")
             await ctx.channel.send("API authentication failed three times. Tracker not started.")
         else:
-            logging.info(f"Starting {session_type} Warzone session.")
+            logging.info(f"Starting Warzone session.")
             ctx.bot.warzone_session_tracker.start(tracker_session)
             ctx.bot.session_start_time = time.localtime()
             await ctx.channel.send("Warzone tracker started. Good luck, team.")
 
     # end a Warzone session, send stats, and then reset.
+    # can only be invoked in private test server
     @command(name="end_wz")
     async def end_wz(ctx):
         if ctx.guild.name != "Bot Test Server":
@@ -279,29 +289,20 @@ class LumberBot(Bot):
             await ctx.channel.send("There is currently no active session to end.")
             return
 
-        # a session can only be ended in the same server it was started in
-        # this block is currently unnecessary, but will be needed if I allow sessions to be activated in the normal server
-        if ctx.guild.name != ctx.bot.start_server:
-            logging.info("end_wz command invoked in server different from where it started.")
-            await ctx.channel.send("There is currently no active session to end.")
-
         logging.info("Warzone session has ended. Stopping tracker.")
         ctx.bot.warzone_session_tracker.cancel()
 
-        num_matches = ctx.bot.bglow_stats["matches"]
+        num_matches = ctx.bot.stats_dict["matches"]
         if num_matches == 0:
             await ctx.channel.send("Warzone tracker stopped. No matches were played.")
-        elif ctx.bot.public_session:
-            avg_placement = int(round(ctx.bot.bglow_stats["teamPlacements"] / num_matches, 2))
-            await ctx.channel.send(f"Warzone tracker stopped. The team played {num_matches} games with an average placement of {avg_placement}.")
-        else: # the session is private, so we can send my individual stats
-            formatted_stats = ctx.bot.format_individual_stats(time.localtime())
+        else:
+            formatted_stats = format_individual_stats(ctx.bot.stats_dict, time.localtime(), "bglowniak")
             await ctx.channel.send(f"Warzone tracker stopped. Here are your final stats:\n{formatted_stats}")
 
         # reset session variables
         ctx.bot.reset_session_variables()
 
-    # return my individual stats. Only works in my private test server.
+    # return team's cumulative stats
     @command(name="session_stats")
     async def session_stats(ctx):
         if ctx.guild.name != "Bot Test Server": # this command is only for private use
@@ -309,19 +310,54 @@ class LumberBot(Bot):
             return
 
         if ctx.bot.session_start_time is None:
-            logging.info("Stats command invoked, but there is currently no active session.")
+            logging.info("session_stats command invoked, but there is currently no active session.")
             await ctx.channel.send("There is currently no active session to report stats on.")
             return
 
-        formatted_stats = ctx.bot.format_individual_stats(time.localtime())
-
-        if formatted_stats is None: # there were 0 matches to process
-            logging.info("Stats command invoked with 0 matches logged. Skipping processing and informing user.")
-            await ctx.channel.send("No matches logged for active session.")
+        if ctx.bot.stats_dict["matches"] == 0:
+            logging.info("session_stats command invoked, but no matches have been played.")
+            await ctx.channel.send("No matches have been played.")
             return
 
-        logging.info("Stats command invoked. Processing logged stats and sending message.")
-        await ctx.channel.send(f"Here are your current session stats:\n{formatted_stats}")
+        formatted_stats = format_session_stats(ctx.bot.stats_dict)
+        logging.info("session_stats successfully invoked. Sending message.")
+        await ctx.channel.send(formatted_stats)
+
+    # return cumulative stats of an individual player
+    # add --all input
+    @command(name="player_stats")
+    async def player_stats(ctx, username):
+        if ctx.guild.name != "Bot Test Server": # this command is only for private use
+            logging.info("Stats command invoked in normal server. Ignoring.")
+            return
+
+        if ctx.bot.session_start_time is None:
+            logging.info("player_stats command invoked, but there is currently no active session.")
+            await ctx.channel.send("There is no active session to report stats on.")
+            return
+
+        if ctx.bot.stats_dict["matches"] == 0:
+            logging.info("player_stats command invoked, but no matches have been played.")
+            await ctx.channel.send("No matches have been played.")
+            return
+
+        if username not in ctx.bot.stats_dict["players"]:
+            logging.info("player_stats command invoked, but no stats were found for inputted username.")
+            await ctx.channel.send(f"{username} has not played any matches. No stats to report.")
+            return
+
+        formatted_stats = format_individual_stats(ctx.bot.stats_dict, username)
+        logging.info("player_stats successfully invoked. Sending message.")
+        await ctx.channel.send(formatted_stats)
+
+    @player_stats.error
+    async def player_stats_error(ctx, error):
+        if isinstance(error, MissingRequiredArgument):
+            logging.error("No argument provided to player_stats command. Sending message to user.")
+            await ctx.channel.send("Please specify a username to return stats for.")
+            return
+
+        raise error
 
     @command(name="clear_channel")
     async def clear_channel(ctx):
@@ -345,101 +381,10 @@ class LumberBot(Bot):
 
         return channels
 
-    # returns formatted list of players and their match stats
-    # player_dict format is expected to be {gamertag: [kills, deaths, damage]}
-    def format_team_stats(self, player_dict):
-        format = ""
-        for player, stats in player_dict.items():
-            kills = stats[0]
-            deaths = stats[1]
-            kd_ratio = kills if deaths == 0 else round(kills / deaths, 2)
-            damage = stats[2]
-
-            player = self.map_player_name(player)
-            format += f"    • {player}: {int(kills)}-{int(deaths)} ({kd_ratio} K/D), {int(damage)} damage.\n"
-
-        return format
-
-    # formats individual stats from the bglow_stats dictionary
-    def format_individual_stats(self, current_time):
-        matches = self.bglow_stats["matches"]
-        if matches == 0:
-            return None
-
-        kills = self.bglow_stats["kills"]
-        deaths = self.bglow_stats["deaths"]
-        damage = self.bglow_stats["damage"]
-        kd_ratio = kills if deaths == 0 else round(kills / deaths, 2)
-        avg_kills = round(kills / matches, 2)
-        avg_damage = round(damage / matches, 2)
-        full_duration = round((time.mktime(current_time) - time.mktime(self.session_start_time)) / 60, 2)
-        avg_placement = int(round(self.bglow_stats["teamPlacements"] / matches, 2))
-        win_str = "win" if self.wins == 1 else "wins"
-
-        return f"**Session Start**: {self.formatted_start_time}\n" \
-               f"**Matches Played**: {matches}\n" \
-               f"**Average Team Placement**: {avg_placement} ({self.wins} {win_str})\n" \
-               f"**K/D**: {int(kills)}-{int(deaths)} ({kd_ratio})\n" \
-               f"**Average Damage**: {avg_damage} ({int(damage)} total)\n" \
-               f"**Total Session Duration**: {full_duration} minutes\n"
-
-    # hardcode known gamertags to Discord message IDs
-    def map_player_name(self, player):
-        if player == "bglowniak":
-            player = "<@!250017966928691211>"
-        elif player == "triplexlink":
-            player = "<@!273518554517602305>"
-        elif player == "funny_monkey998":
-            player = "<@!479298269110075433>"
-        elif player == "MisterDuV":
-            player = "<@!425035767350296578>"
-        elif player == "Sharkyplace":
-            player = "<@!545430460860334082>"
-        elif player == "TetoTeto":
-            player = "<@!483853566281383946>"
-
-        return player
-
-    # takes in a session object and attempts to set the required cookies to make WZ API calls
-    def authenticate_warzone_api(self, session):
-        # how to regenerate device_id and auth_token if needed
-        #device_id = hex(random.getrandbits(128)).lstrip("0x")
-        #payload =  {"deviceId": device_id}
-        #resp = s.post('https://profile.callofduty.com/cod/mapp/registerDevice', json=payload)
-        #auth_token = resp.json()['data']['authHeader']
-
-        headers = {
-            "Authorization": f"Bearer {self.auth_token}",
-            "x_cod_device_id" : self.device_id,
-        }
-
-        data = {'email': self.cod_email, 'password': self.cod_pw}
-        response = session.post('https://profile.callofduty.com/cod/mapp/login', headers=headers, json=data)
-
-        if response.status_code == 200 and response.json()["success"] == True:
-            logging.info("API Session successfully authenticated")
-        else:
-            logging.error(f"API session unable to be established. API returned {response.text}")
-            raise Exception("API authentication failure")
-
-    # helper function for session authentication. Retries 3 times in case of failure.
-    def authenticate_session(self, session):
-        connecting = True
-        attempts = 0
-        while connecting and attempts < 3:
-            try:
-                self.authenticate_warzone_api(session)
-                connecting = False
-            except:
-                attempts += 1
-                if attempts < 3: time.sleep(5) # space out attempts
-
-        return (attempts != 3)
-
     def reset_session_variables(self):
         self.session_start_time = None
-        self.start_server = None
-        self.public_session = False
-        self.wins = 0
-        for key in self.bglow_stats:
-            self.bglow_stats[key] = 0
+
+        self.stats_dict["wins"] = 0
+        self.stats_dict["team_placements"] = 0
+        self.stats_dict["matches"] = 0
+        self.stats_dict["players"] = {}
