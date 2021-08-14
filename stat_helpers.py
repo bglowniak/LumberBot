@@ -154,6 +154,8 @@ def map_player_name(player):
         player = "<@!545430460860334082>"
     elif player == "TetoTeto":
         player = "<@!483853566281383946>"
+    elif player == "cooliodude13":
+        player = "<@!137213864872902656>"
 
     return player
 

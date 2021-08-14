@@ -51,6 +51,7 @@ class LumberBot(Bot):
         self.add_command(self.session_stats)
         self.add_command(self.player_stats)
         self.add_command(self.awards)
+        self.add_command(self.get_clip)
         self.add_command(self.start_wz)
         self.add_command(self.end_wz)
         self.add_command(self.clear_channel)
