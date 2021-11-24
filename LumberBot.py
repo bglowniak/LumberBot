@@ -33,8 +33,9 @@ class LumberBot(Bot):
         self.debug = kwargs["debug"]
 
         self.most_recent_match_id = None # used for warzone win tracking
-        #self.most_recent_match_id = "9429061249485592100"
-        #self.most_recent_match_id = "10792965779580188529"
+        #self.most_recent_match_id = "5432112720530880300"
+
+        self.session_active = False
 
         # track cumulative stats throughout a session
         self.stats_dict = {
@@ -51,7 +52,6 @@ class LumberBot(Bot):
         self.add_command(self.session_stats)
         self.add_command(self.player_stats)
         self.add_command(self.awards)
-        self.add_command(self.get_clip)
         self.add_command(self.start_wz)
         self.add_command(self.end_wz)
         self.add_command(self.clear_channel)
@@ -119,9 +119,6 @@ class LumberBot(Bot):
     async def on_command_error(self, ctx, error):
         if isinstance(error, CommandNotFound):
             logging.debug(f"Command in message \"{ctx.message.content}\" not found. Ignoring.")
-            return
-        if isinstance(error, MissingRequiredArgument):
-            # this error is handled in each specific command's error handler
             return
 
         raise error
@@ -279,12 +276,12 @@ class LumberBot(Bot):
     # start a new Warzone session
     # can only be invoked in private test server
     @command(name="start_wz")
-    async def start_wz(ctx):
+    async def start_wz(ctx, use_existing_stats=None):
         if ctx.guild.name != "Bot Test Server":
             logging.info("start_wz command invoked in normal server. Ignoring.")
             return
 
-        if ctx.bot.session_start_time is not None:
+        if ctx.bot.session_active:
             logging.info("start_wz command invoked, but there is already an active session.")
             await ctx.channel.send(f"There is already an active session that was started at {ctx.bot.formatted_start_time}")
             return
@@ -298,8 +295,13 @@ class LumberBot(Bot):
             await ctx.channel.send("API authentication failed three times. Tracker not started.")
         else:
             logging.info(f"Starting Warzone session.")
+
+            if use_existing_stats != "-c":
+                ctx.bot.reset_session_variables()
+
             ctx.bot.warzone_session_tracker.start(tracker_session)
             ctx.bot.session_start_time = time.localtime()
+            ctx.bot.session_active = True
             await ctx.channel.send("Warzone tracker started. Good luck, team.")
 
     # end a Warzone session and reset.
@@ -310,13 +312,14 @@ class LumberBot(Bot):
             logging.info("end_wz command invoked in normal server. Ignoring.")
             return
 
-        if ctx.bot.session_start_time is None:
+        if not ctx.bot.session_active:
             logging.info("end_wz command invoked, but there is currently no active session.")
             await ctx.channel.send("There is currently no active session to end.")
             return
 
         logging.info("Warzone session has ended. Stopping tracker.")
         ctx.bot.warzone_session_tracker.cancel()
+        ctx.bot.session_active = False
 
         num_matches = ctx.bot.stats_dict["matches"]
         if num_matches == 0:
@@ -324,17 +327,9 @@ class LumberBot(Bot):
         else:
             await ctx.channel.send(f"Warzone tracker stopped. Good work out there.")
 
-        # reset session variables
-        ctx.bot.reset_session_variables()
-
     # return team's cumulative stats
     @command(name="session_stats")
     async def session_stats(ctx):
-        if ctx.bot.session_start_time is None:
-            logging.info("session_stats command invoked, but there is currently no active session.")
-            await ctx.channel.send("There is currently no active session to report stats on.")
-            return
-
         if ctx.bot.stats_dict["matches"] == 0:
             logging.info("session_stats command invoked, but no matches have been played.")
             await ctx.channel.send("No matches have been played.")
@@ -346,18 +341,13 @@ class LumberBot(Bot):
 
     # return cumulative stats of an individual player
     @command(name="player_stats")
-    async def player_stats(ctx, username_arg):
-        if ctx.bot.session_start_time is None:
-            logging.info("player_stats command invoked, but there is currently no active session.")
-            await ctx.channel.send("There is no active session to report stats on.")
-            return
-
+    async def player_stats(ctx, username_arg=None):
         if ctx.bot.stats_dict["matches"] == 0:
             logging.info("player_stats command invoked, but no matches have been played.")
             await ctx.channel.send("No matches have been played.")
             return
 
-        if username_arg == "--all" or username_arg == "-a": 
+        if username_arg == None: # return all player stats
             formatted_stats = ""
             for player in ctx.bot.stats_dict["players"].keys():
                 formatted_stats += format_individual_stats(ctx.bot.stats_dict, player) + "\n"
@@ -371,22 +361,8 @@ class LumberBot(Bot):
         logging.info("player_stats successfully invoked. Sending message.")
         await ctx.channel.send(formatted_stats)
 
-    @player_stats.error
-    async def player_stats_error(ctx, error):
-        if isinstance(error, MissingRequiredArgument):
-            logging.error("No argument provided to player_stats command. Sending message to user.")
-            await ctx.channel.send("Please specify a username to return stats for.")
-            return
-
-        raise error
-
     @command(name="awards")
     async def awards(ctx):
-        if ctx.bot.session_start_time is None:
-            logging.info("Awards command invoked, but there is currently no active session.")
-            await ctx.channel.send("There is no active session to report stats on.")
-            return
-
         if ctx.bot.stats_dict["matches"] == 0:
             logging.info("Awards command invoked, but no matches have been played.")
             await ctx.channel.send("No matches have been played.")
@@ -396,10 +372,6 @@ class LumberBot(Bot):
         logging.info("Awards successfully invoked. Sending message.")
         await ctx.channel.send(awards_message)
 
-    @command(name="get_clip")
-    async def get_clip(ctx, username_arg):
-        logger.info("get_clip command not yet implemented.")
-        return
     
     @command(name="clear_channel")
     async def clear_channel(ctx):

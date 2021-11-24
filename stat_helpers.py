@@ -6,7 +6,7 @@ def format_win_message_stats(match_stats_dict):
     for player, stats in match_stats_dict.items():
         kills = stats["kills"]
         deaths = stats["deaths"]
-        kd_ratio = calc_kd(kills, deaths)
+        kd_ratio = calc_ratio(kills, deaths)
         damage = stats["damage"]
 
         player = map_player_name(player)
@@ -34,7 +34,7 @@ def format_session_stats(stats_dict):
         total_kills += stats["kills"]
         total_deaths += stats["deaths"]
 
-    team_kd = calc_kd(total_kills, total_deaths)
+    team_kd = calc_ratio(total_kills, total_deaths)
 
     max_kills = stats_dict['single_game_max_kills']
     max_deaths = stats_dict['single_game_max_deaths']
@@ -58,7 +58,7 @@ def format_individual_stats(stats_dict, username):
     damage = player_stats["damage"]
     matches = player_stats["individual_matches"] # separate from total matches in case player leaves early
 
-    kd_ratio = calc_kd(kills, deaths)
+    kd_ratio = calc_ratio(kills, deaths)
     avg_kills = round(kills / matches, 2)
     avg_damage = round(damage / matches, 2)
 
@@ -93,8 +93,8 @@ def format_awards(stats_dict):
         deaths = stats["deaths"]
         damage = stats["damage"]
         damage_taken = stats["damage_taken"]
-        kd_ratio = calc_kd(kills, deaths)
-        damage_ratio = calc_kd(damage, damage_taken) # should probably rename the func lol
+        kd_ratio = calc_ratio(kills, deaths)
+        damage_ratio = calc_ratio(damage, damage_taken) # should probably rename the func lol
 
         player = map_player_name(player)
 
@@ -165,5 +165,5 @@ def format_time(time_input):
 
     return time.strftime("%m/%d %H:%M:%S", time_input)
 
-def calc_kd(kills, deaths):
+def calc_ratio(kills, deaths):
     return kills if deaths == 0 else round(kills / deaths, 2)
