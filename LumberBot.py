@@ -255,6 +255,8 @@ class LumberBot(Bot):
                         map = "Verdansk"
                     elif map == "mp_escape2" or map == "mp_escape3":
                         map = "Rebirth"
+                    elif map == "mp_wz_island":
+                        map = "Caldera"
 
                     await self.default_channels[self.server].send(content="Congratulations on a recent Warzone win!\n" \
                                                                             f"**Match Start Time**: {match_start_time}\n" \
