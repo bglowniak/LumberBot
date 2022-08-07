@@ -46,8 +46,8 @@ def authenticate_warzone_api(session, atkn, sso):
         logger.error("atkn and sso cookies must be set in .env by logging in on web browser")
         raise RuntimeError("API authentication failure")
     else:
-        session.cookies["atkn"] = atkn
-        session.cookies["ACT_SSO_COOKIE"] = sso
+        session.cookies.set("atkn", atkn, domain=".callofduty.com")
+        session.cookies.set("ACT_SSO_COOKIE", sso, domain=".callofduty.com")
 
 # helper function for session authentication. Retries 3 times in case of failure.
 def authenticate_session(session, atkn, sso):
