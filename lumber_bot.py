@@ -93,7 +93,6 @@ class LumberBot(Bot):
     async def on_command_error(self, ctx, error):
         if isinstance(error, CommandNotFound):
             logging.info(f"Command in message \"{ctx.message.content}\" not found. Ignoring.")
-            return
         else:
             logger.error(f"{ctx.invoked_with}: {error}")
             await ctx.channel.send("Sorry, error occurred when invoking command.")
@@ -149,10 +148,11 @@ class LumberBot(Bot):
                         username = player["player"]["username"]
 
                         self.stat_tracker.update_cumulative_player_stats(username, player_stats)
+                        kills = player_stats["kills"]
 
                         # collect stats for individual match
                         match_stats_dict[username] = {
-                            "kills": player_stats["kills"], 
+                            "kills": kills, 
                             "deaths": player_stats["deaths"], 
                             "damage": player_stats["damageDone"]
                         }

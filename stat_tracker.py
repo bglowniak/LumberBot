@@ -8,9 +8,17 @@ class StatTracker():
             "wins": 0,
             "matches": 0,
             "team_placements": 0,
-            "single_game_max_kills": ("", 0),
-            "single_game_max_deaths": ("", 0),
             "players": {}
+        }
+
+        # track max kills/deaths for single match
+        self.max_kill_tracker = {
+            "usernames": set(),
+            "kills": 0
+        }
+        self.max_death_tracker = {
+            "usernames": set(),
+            "deaths": 0
         }
 
     def set_start_time(self, time):
@@ -38,13 +46,14 @@ class StatTracker():
                 "individual_matches": 0,
                 "headshots": 0,
                 "assists": 0,
-                "damage_taken": 0
+                "damage_taken": 0,
+                "max_kills": 0,
+                "max_deaths": 0
             }
 
         kills = player_stats["kills"]
         deaths = player_stats["deaths"]
 
-        # TODO: refactor?
         self.stats_dict["players"][username]["kills"] += kills
         self.stats_dict["players"][username]["deaths"] += deaths
         self.stats_dict["players"][username]["damage"] += player_stats["damageDone"]
@@ -53,12 +62,11 @@ class StatTracker():
         self.stats_dict["players"][username]["assists"] += player_stats["assists"]
         self.stats_dict["players"][username]["damage_taken"] += player_stats["damageTaken"]
 
-        # TODO: refactor to allow multiple users to be tracked here (use dict instead of tuple)
-        if kills > self.stats_dict["single_game_max_kills"][1]:
-            self.stats_dict["single_game_max_kills"] = (username, kills)
-
-        if deaths > self.stats_dict["single_game_max_deaths"][1]:
-            self.stats_dict["single_game_max_deaths"] = (username, deaths)
+        if kills > self.stats_dict["players"][username]["max_kills"]:
+            self.stats_dict["players"][username]["max_kills"] = kills
+        
+        if deaths > self.stats_dict["players"][username]["max_deaths"]:
+            self.stats_dict["players"][username]["max_deaths"] = deaths
 
     def format_win_message(self, match_data, match_stats):
         self.stats_dict["wins"] += 1
@@ -105,21 +113,37 @@ class StatTracker():
 
         total_kills = 0
         total_deaths = 0
-        for _, stats in self.stats_dict["players"].items():
+        max_kills = 0
+        max_deaths = 0
+        max_kills_usernames = set()
+        max_deaths_usernames = set()
+        for player, stats in self.stats_dict["players"].items():
             total_kills += stats["kills"]
             total_deaths += stats["deaths"]
+            player_max_kills = stats["max_kills"]
+            player_max_deaths = stats["max_deaths"]
+            if player_max_kills > max_kills:
+                max_kills = player_max_kills
+                max_kills_usernames = {player}
+            if player_max_kills == max_kills:
+                max_kills_usernames.add(player)
+            if player_max_deaths > max_deaths:
+                max_deaths = player_max_deaths
+                max_deaths_usernames = {player}
+            if player_max_deaths == max_deaths:
+                max_deaths_usernames.add(player)
 
         team_kd = self._calc_ratio(total_kills, total_deaths)
 
-        max_kills = self.stats_dict['single_game_max_kills']
-        max_deaths = self.stats_dict['single_game_max_deaths']
+        max_kills_usernames = ', '.join(max_kills_usernames)
+        max_deaths_usernames = ', '.join(max_deaths_usernames)
 
         return f"**Session Start**: {self._format_time(self.session_start)}\n" \
                f"**Matches Played**: {team_matches}\n" \
                f"**Team K/D**: {int(total_kills)}-{int(total_deaths)} ({team_kd})\n" \
                f"**Average Team Placement**: {avg_placement} ({wins} {win_str})\n" \
-               f"**Max Kills**: {int(max_kills[1])} ({max_kills[0]})\n" \
-               f"**Max Deaths**: {int(max_deaths[1])} ({max_deaths[0]})\n" \
+               f"**Max Kills**: {int(max_kills)} ({max_kills_usernames})\n" \
+               f"**Max Deaths**: {int(max_deaths)} ({max_deaths_usernames})\n" \
                f"**Total Session Duration**: {full_duration} minutes\n"
 
     # formats cumulative individual stats from the stats dictionary
