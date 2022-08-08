@@ -1,26 +1,24 @@
 import os
 import random
 import re
-import requests
 import logging
 import time
-import json
 from discord import File
 from discord.ext import tasks
-from discord.ext.commands import Bot, command, CommandNotFound, MissingRequiredArgument
-from dotenv import load_dotenv
+from discord.ext.commands import Bot, command, CommandNotFound
 
 from api_session import WarzoneApi
 from stat_tracker import StatTracker
 
 logger = logging.getLogger(__name__)
 
+
 class LumberBot(Bot):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.greetings = ["hello", "hi", "hiya", "hey", "howdy",
                           "sup", "hola", "privet", "salve", "ciao",
-                           "konnichiwa", "shalom"]
+                          "konnichiwa", "shalom"]
 
         self.mention_id = os.getenv("BOT_MENTION_ID")
         self.salute_directory = os.getenv("SALUTE_DIRECTORY")
@@ -28,7 +26,7 @@ class LumberBot(Bot):
 
         self.debug = kwargs["debug"]
 
-        #self.most_recent_match_id = None # used for warzone win tracking
+        # self.most_recent_match_id = None # used for warzone win tracking
         self.most_recent_match_id = "12195181859429414966"
         self.session_active = False
 
@@ -98,13 +96,13 @@ class LumberBot(Bot):
             return
         else:
             raise error
-            ## TODO: include more info
-            #logger.error("Error invoking command")
+            # TODO: include more info
+            # logger.error("Error invoking command")
 
     #################################    TASKS    #################################
 
     # started and stopped via the start_wz and end_wz commands
-    @tasks.loop(minutes=8.0) # turned from 10 -> 8 to account for faster Rebirth matches
+    @tasks.loop(minutes=8.0)  # turned from 10 -> 8 to account for faster Rebirth matches
     async def warzone_session_tracker(self):
         logging.info("Running Warzone Win Tracker loop")
 
@@ -114,20 +112,20 @@ class LumberBot(Bot):
             logger.error(f"Get Recent Matches call failed: {e}")
             return
 
-        #uncomment to dump API data to debug
-        #with open("dump.json", "w") as f:
+        # uncomment to dump API data to debug
+        # with open("dump.json", "w") as f:
         #   f.write(json.dumps(recent_matches, indent=4))
-        #return
+        # return
 
         matches_checked = 0
 
         # the purpose of most_recent_match_id is to make sure we only process new matches added to the list
-        if self.most_recent_match_id == None:
+        if self.most_recent_match_id is None:
             self.most_recent_match_id = recent_matches[0]["matchID"]
-        elif recent_matches[0]["matchID"] != self.most_recent_match_id: # there are new matches to process
+        elif recent_matches[0]["matchID"] != self.most_recent_match_id:  # there are new matches to process
             for match in recent_matches:
                 current_ID = match["matchID"]
-                if current_ID == self.most_recent_match_id: # we have processed all new matches in the list
+                if current_ID == self.most_recent_match_id:  # we have processed all new matches in the list
                     break
 
                 # get basic match data
@@ -194,10 +192,10 @@ class LumberBot(Bot):
 
         if ctx.bot.session_active:
             logging.info("start_wz command invoked, but there is already an active session.")
-            await ctx.channel.send(f"There is already an active session.")
+            await ctx.channel.send("There is already an active session.")
             return
 
-        logging.info(f"Starting Warzone session.")
+        logging.info("Starting Warzone session.")
 
         if use_existing_stats != "-c":
             ctx.bot.stat_tracker = StatTracker()
@@ -227,7 +225,7 @@ class LumberBot(Bot):
         if ctx.bot.stat_tracker.get_num_matches() == 0:
             await ctx.channel.send("Warzone tracker stopped. No matches were played.")
         else:
-            await ctx.channel.send(f"Warzone tracker stopped. Good work out there.")
+            await ctx.channel.send("Warzone tracker stopped. Good work out there.")
 
     # return team's cumulative stats
     @command(name="session_stats")
@@ -251,7 +249,7 @@ class LumberBot(Bot):
 
         # TODO: refactor, add this functionality to stattracker?
         # Handle case when username arg is None
-        #if username_arg == None: # return all player stats
+        # if username_arg == None: # return all player stats
         #    formatted_stats = ""
         #    for player in ctx.bot.stats_dict["players"].keys():
         #        formatted_stats += format_individual_stats(ctx.bot.stats_dict, player) + "\n"

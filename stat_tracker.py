@@ -1,5 +1,6 @@
 import time
 
+
 class StatTracker():
     def __init__(self):
         self.session_start = None
@@ -26,11 +27,11 @@ class StatTracker():
         self.stats_dict["team_placements"] += placement
 
     def update_cumulative_player_stats(self, username, player_stats):
-        if not username in self.stats_dict["players"]:
+        if username not in self.stats_dict["players"]:
             self.stats_dict["players"][username] = {
-                "kills": 0, 
-                "deaths": 0, 
-                "damage": 0, 
+                "kills": 0,
+                "deaths": 0,
+                "damage": 0,
                 "individual_matches": 0,
                 "headshots": 0,
                 "assists": 0,
@@ -52,23 +53,23 @@ class StatTracker():
         # TODO: refactor to allow multiple users to be tracked here (use dict instead of tuple)
         if kills > self.stats_dict["single_game_max_kills"][1]:
             self.stats_dict["single_game_max_kills"] = (username, kills)
-                        
+
         if deaths > self.stats_dict["single_game_max_deaths"][1]:
             self.stats_dict["single_game_max_deaths"] = (username, deaths)
-    
+
     def format_win_message(self, match_data, match_stats):
         self.stats_dict["wins"] += 1
-        
+
         match_start_time = time.strftime("%m/%d %H:%M:%S", time.localtime(match_data["utcStartSeconds"]))
         duration = round((match_data["utcEndSeconds"] - match_data["utcStartSeconds"]) / 60, 2)
         stats = self.format_win_message_stats(match_stats)
         map_name = self._replace_map_name(match_data["map"])
 
         message = "Congratulations on a recent Warzone win!\n" \
-                 f"**Match Start Time**: {match_start_time}\n" \
-                 f"**Match Duration**: {duration} minutes\n" \
-                 f"**Map**: {map_name}\n" \
-                 f"**Team Stats**:\n{stats}"
+                  f"**Match Start Time**: {match_start_time}\n" \
+                  f"**Match Duration**: {duration} minutes\n" \
+                  f"**Map**: {map_name}\n" \
+                  f"**Team Stats**:\n{stats}"
 
         return message
 
@@ -127,7 +128,7 @@ class StatTracker():
         kills = player_stats["kills"]
         deaths = player_stats["deaths"]
         damage = player_stats["damage"]
-        matches = player_stats["individual_matches"] # separate from total matches in case player leaves early
+        matches = player_stats["individual_matches"]  # separate from total matches in case player leaves early
 
         kd_ratio = self._calc_ratio(kills, deaths)
         avg_kills = round(kills / matches, 2)
@@ -136,6 +137,7 @@ class StatTracker():
         return f"Stats for **{username}**:\n" \
                f"**Matches Played**: {matches}\n" \
                f"**K/D**: {int(kills)}-{int(deaths)} ({kd_ratio})\n" \
+               f"**Average Kills**: {avg_kills}" \
                f"**Average Damage**: {avg_damage} ({int(damage)} total)\n"
 
     # processes stats and assigns awards
@@ -166,7 +168,7 @@ class StatTracker():
             damage = stats["damage"]
             damage_taken = stats["damage_taken"]
             kd_ratio = self._calc_ratio(kills, deaths)
-            damage_ratio = self._calc_ratio(damage, damage_taken) # should probably rename the func lol
+            damage_ratio = self._calc_ratio(damage, damage_taken)  # should probably rename the func lol
 
             player = self._map_player_name(player)
 
@@ -174,7 +176,7 @@ class StatTracker():
             if kd_ratio == best_kd:
                 best_kd_winners.append(player)
             elif kd_ratio > best_kd:
-                best_kd_winners = [player] # clear list and replace with new winner
+                best_kd_winners = [player]  # clear list and replace with new winner
                 best_kd = kd_ratio
 
             # Carried Award (Worst KD Ratio)
@@ -190,7 +192,7 @@ class StatTracker():
             elif kills > most_kills:
                 most_kills_winners = [player]
                 most_kills = kills
-        
+
             # Cannon Fodder Award (Most Deaths)
             if deaths == most_deaths:
                 most_deaths_winners.append(player)

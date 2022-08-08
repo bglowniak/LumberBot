@@ -1,10 +1,11 @@
 import os
 import requests
 
-# original authentication method would make a POST request to COD site login to set atkn and sso cookies
+# original method would make a POST request to COD site login to set atkn and sso cookies
 # this method now fails because Activision added a recaptcha to the login
 # new method: manually log into browser and pull the required cookies from developer tools
 # potential future workaround - use Selenium + 2captcha to login programmatically and set the cookies
+
 
 class WarzoneApi():
     def __init__(self):
@@ -22,8 +23,7 @@ class WarzoneApi():
         self.session.get('https://profile.callofduty.com/cod/login')
 
         if self.atkn is None or self.sso is None:
-            logger.error("atkn and sso cookies must be set in .env by logging in on web browser")
-            raise RuntimeError("API authentication failure")
+            raise RuntimeError("atkn and sso cookies must be set in .env by logging in on web browser")
         else:
             self.session.cookies.set("atkn", self.atkn, domain=".callofduty.com")
             self.session.cookies.set("ACT_SSO_COOKIE", self.sso, domain=".callofduty.com")
@@ -37,7 +37,7 @@ class WarzoneApi():
             raise Exception(f"API returned 200 status code but there was an unknown error. API responded with {api_data}")
 
         return api_data["data"]["matches"]
-    
+
     # use match ID to get more detailed data/stats
     def get_match_details(self, match_id):
         req_url = f"crm/cod/v2/title/mw/platform/uno/fullMatch/wz/{match_id}/en"
