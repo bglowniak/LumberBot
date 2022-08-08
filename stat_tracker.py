@@ -22,6 +22,9 @@ class StatTracker():
     def get_num_matches(self):
         return self.stats_dict["matches"]
 
+    def get_usernames(self):
+        return self.stats_dict["players"].keys()
+
     def update_cumulative_match_stats(self, placement):
         self.stats_dict["matches"] += 1
         self.stats_dict["team_placements"] += placement
@@ -137,7 +140,7 @@ class StatTracker():
         return f"Stats for **{username}**:\n" \
                f"**Matches Played**: {matches}\n" \
                f"**K/D**: {int(kills)}-{int(deaths)} ({kd_ratio})\n" \
-               f"**Average Kills**: {avg_kills}" \
+               f"**Average Kills**: {avg_kills}\n" \
                f"**Average Damage**: {avg_damage} ({int(damage)} total)\n"
 
     # processes stats and assigns awards
@@ -234,7 +237,6 @@ class StatTracker():
         return player
 
     # replace map IDs with known map name
-    # TODO: refactor with constant dict?
     def _replace_map_name(self, map_name):
         if map_name.startswith("mp_don"):
             return "Verdansk"

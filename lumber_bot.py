@@ -159,7 +159,6 @@ class LumberBot(Bot):
 
                         if kills >= 10:
                             logging.info(f"Found a 10+ kill game for {username}. Sending congrats message.")
-                            # TODO: differently?
                             discord_handle = self.stat_tracker._map_player_name(username)
                             await self.default_channels[self.server].send(f"Congrats to {discord_handle} who has achieved **{int(kills)} kills** in a single Warzone match!")
 
@@ -247,21 +246,19 @@ class LumberBot(Bot):
             await ctx.channel.send("No matches have been played.")
             return
 
-        # TODO: refactor, add this functionality to stattracker?
-        # Handle case when username arg is None
-        # if username_arg == None: # return all player stats
-        #    formatted_stats = ""
-        #    for player in ctx.bot.stats_dict["players"].keys():
-        #        formatted_stats += format_individual_stats(ctx.bot.stats_dict, player) + "\n"
-
-        formatted_stats = ctx.bot.stat_tracker.format_individual_stats(username_arg)
+        if username_arg is None:
+            formatted_stats = ""
+            for player in ctx.bot.stat_tracker.get_usernames():
+                formatted_stats += ctx.bot.stat_tracker.format_individual_stats(player) + "\n"
+        else:
+            formatted_stats = ctx.bot.stat_tracker.format_individual_stats(username_arg)
 
         if formatted_stats:
             logging.info("player_stats successfully invoked. Sending message.")
             await ctx.channel.send(formatted_stats)
         else:
-            logging.info("player_stats command invoked, but no stats were found for inputted username.")
-            await ctx.channel.send(f"{username_arg} has not played any matches. No stats to report.")
+            logging.info("player_stats command invoked, but no stats were found.")
+            await ctx.channel.send("No stats to report.")
 
     @command(name="awards")
     async def awards(ctx):
