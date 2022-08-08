@@ -2,15 +2,18 @@ import time
 
 class StatTracker():
     def __init__(self):
+        self.session_start = None
         self.stats_dict = {
             "wins": 0,
             "matches": 0,
             "team_placements": 0,
-            "session_start": None,
             "single_game_max_kills": ("", 0),
             "single_game_max_deaths": ("", 0),
             "players": {}
         }
+
+    def set_start_time(self, time):
+        self.session_start = time
 
     def get_wins(self):
         return self.stats_dict["wins"]
@@ -34,9 +37,12 @@ class StatTracker():
                 "damage_taken": 0
             }
 
+        kills = player_stats["kills"]
+        deaths = player_stats["deaths"]
+
         # TODO: refactor?
-        self.stats_dict["players"][username]["kills"] += player_stats["kills"]
-        self.stats_dict["players"][username]["deaths"] += player_stats["deaths"]
+        self.stats_dict["players"][username]["kills"] += kills
+        self.stats_dict["players"][username]["deaths"] += deaths
         self.stats_dict["players"][username]["damage"] += player_stats["damageDone"]
         self.stats_dict["players"][username]["individual_matches"] += 1
         self.stats_dict["players"][username]["headshots"] += player_stats["headshots"]
@@ -53,23 +59,23 @@ class StatTracker():
     def format_win_message(self, match_data, match_stats):
         self.stats_dict["wins"] += 1
         
-        match_start_time = time.strftime("%m/%d %H:%M:%S", time.localtime(match["utcStartSeconds"]))
-        duration = round((match["utcEndSeconds"] - match["utcStartSeconds"]) / 60, 2)
-        stats = self.format_win_message_stats(match_stats_dict)
-        map_name = self._replace_map_name(match["map"])
+        match_start_time = time.strftime("%m/%d %H:%M:%S", time.localtime(match_data["utcStartSeconds"]))
+        duration = round((match_data["utcEndSeconds"] - match_data["utcStartSeconds"]) / 60, 2)
+        stats = self.format_win_message_stats(match_stats)
+        map_name = self._replace_map_name(match_data["map"])
 
         message = "Congratulations on a recent Warzone win!\n" \
                  f"**Match Start Time**: {match_start_time}\n" \
                  f"**Match Duration**: {duration} minutes\n" \
-                 f"**Map**: {map}\n" \
+                 f"**Map**: {map_name}\n" \
                  f"**Team Stats**:\n{stats}"
 
         return message
 
     # returns formatted list of players and their match stats
-    def format_win_message_stats(self):
+    def format_win_message_stats(self, match_stats):
         format = ""
-        for player, stats in self.stats_dict.items():
+        for player, stats in match_stats.items():
             kills = stats["kills"]
             deaths = stats["deaths"]
             kd_ratio = self._calc_ratio(kills, deaths)
@@ -86,9 +92,8 @@ class StatTracker():
         if team_matches == 0:
             return None
 
-        start_time = self.stats_dict["session_start"]
         current_time = time.localtime()
-        full_duration = round((time.mktime(current_time) - time.mktime(start_time)) / 60, 2)
+        full_duration = round((time.mktime(current_time) - time.mktime(self.session_start)) / 60, 2)
 
         wins = self.stats_dict["wins"]
         win_str = "win" if wins == 1 else "wins"
@@ -105,7 +110,7 @@ class StatTracker():
         max_kills = self.stats_dict['single_game_max_kills']
         max_deaths = self.stats_dict['single_game_max_deaths']
 
-        return f"**Session Start**: {self._format_time(start_time)}\n" \
+        return f"**Session Start**: {self._format_time(self.session_start)}\n" \
                f"**Matches Played**: {team_matches}\n" \
                f"**Team K/D**: {int(total_kills)}-{int(total_deaths)} ({team_kd})\n" \
                f"**Average Team Placement**: {avg_placement} ({wins} {win_str})\n" \
@@ -114,7 +119,7 @@ class StatTracker():
                f"**Total Session Duration**: {full_duration} minutes\n"
 
     # formats cumulative individual stats from the stats dictionary
-    def format_individual_stats(username):
+    def format_individual_stats(self, username):
         if self.stats_dict["matches"] == 0 or username not in self.stats_dict["players"]:
             return None
 
@@ -228,16 +233,15 @@ class StatTracker():
 
     # replace map IDs with known map name
     # TODO: refactor with constant dict?
-    # TODO: refactor?
     def _replace_map_name(self, map_name):
-        if map_name == "mp_don3" or map_name == "mp_don4":
+        if map_name.startswith("mp_don"):
             return "Verdansk"
-        elif map_name == "mp_escape2" or map_name == "mp_escape3":
+        elif map_name.startswith("mp_escape"):
             return "Rebirth"
-        elif map_name == "mp_wz_island":
+        elif map_name.startswith("mp_wz_island"):
             return "Caldera"
-        elif map_name == "fortune's keep placeholder":
-            return "Fortune's Keep
+        elif map_name.startswith("mp_sm_island"):
+            return "Fortune's Keep"
         else:
             return map_name
 

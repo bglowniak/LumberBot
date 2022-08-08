@@ -1,10 +1,9 @@
 import os
-import sys
-from LumberBot import LumberBot
-from dotenv import load_dotenv
-from discord.ext import commands
 import argparse
 import logging
+from lumber_bot import LumberBot
+from dotenv import load_dotenv
+from discord.ext import commands
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%H:%M:%S')
