@@ -1,6 +1,9 @@
 # LumberBot
 Simple Discord bot
 
+[Warzone API Authentication Reference](https://github.com/sdiepend/cod_api) (does not work anymore b/c of captcha)
+[Warzone API Endpoint Reference](https://documenter.getpostman.com/view/5519582/SzzgAefq)
+
 ## Warzone Session Tracking
 
 The main feature of this bot is tracking matches of Call of Duty: Warzone.  
@@ -37,7 +40,7 @@ Session Start: 11/03 21:20:59
 Matches Played: 12
 Team K/D: 159-124 (1.28)
 Average Team Placement: 5 (2 wins)
-Max Kills: 11 (Player1)
+Max Kills: 11 (Player1, Player2)
 Max Deaths: 7 (Player3)
 Total Session Duration: 151.03 minutes
 ```
@@ -51,6 +54,8 @@ Formats and returns an individual player's cumulative stats. If gamertag is not 
 Stats for Player1:
 Matches Played: 12
 K/D: 32-28 (1.14)
+Average Kills: 3.0 (Max: 6)
+Average Deaths: 2.0 (Max: 4)
 Average Damage: 1206.5 (14478 total)
 ```
 
@@ -80,8 +85,6 @@ Awards
 Clear out all messages in the channel of invocation
 
 ## WZ API Authentication
-Authentication was originally done by first sending a GET request to the Call of Duty login page to set an XSRF token that would be used in subsequent API requests. 
-Warzone API Authentication Reference: https://github.com/sdiepend/cod_api (used device_id method)     
-Warzone API Endpoint Reference: https://github.com/Lierrmm/Node-CallOfDuty/blob/master/index.js
+The first step of authentication is to send a GET request to the Call of Duty login page to set an XSRF token that is used in subsequent API requests.
 
-A few months ago, Activision added a Captcha to the login, presumably to prevent tools like this from accessing their APIs. I have a hacky workaround that keeps this working - if you are building a similar project reach out to me and I can share the details.
+After this, the original method was to send a POST request with username and password to the site login. Upon success, this would set a few required cookies that would be used to authenticate any API requests. In 2021, Activision added a reCaptcha to the login, presumably to prevent tools like this from accessing their APIs. I have a hacky workaround that keeps this working - if you are building a similar project reach out to me and I can share the details. I was also looking into a method using Selenium and 2captcha to bypass the captcha and login programmatically, but I may or may not pursue it.
