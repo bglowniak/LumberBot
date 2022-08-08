@@ -26,8 +26,7 @@ class LumberBot(Bot):
 
         self.debug = kwargs["debug"]
 
-        # self.most_recent_match_id = None # used for warzone win tracking
-        self.most_recent_match_id = "12195181859429414966"
+        self.most_recent_match_id = None  # used for warzone win tracking
         self.session_active = False
 
         self.api = WarzoneApi()
