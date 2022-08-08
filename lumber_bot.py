@@ -92,12 +92,11 @@ class LumberBot(Bot):
     # general command error catch-all
     async def on_command_error(self, ctx, error):
         if isinstance(error, CommandNotFound):
-            logging.debug(f"Command in message \"{ctx.message.content}\" not found. Ignoring.")
+            logging.info(f"Command in message \"{ctx.message.content}\" not found. Ignoring.")
             return
         else:
-            raise error
-            # TODO: include more info
-            # logger.error("Error invoking command")
+            logger.error(f"{ctx.invoked_with}: {error}")
+            await ctx.channel.send("Sorry, error occurred when invoking command.")
 
     #################################    TASKS    #################################
 
