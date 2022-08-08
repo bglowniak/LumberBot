@@ -11,16 +11,6 @@ class StatTracker():
             "players": {}
         }
 
-        # track max kills/deaths for single match
-        self.max_kill_tracker = {
-            "usernames": set(),
-            "kills": 0
-        }
-        self.max_death_tracker = {
-            "usernames": set(),
-            "deaths": 0
-        }
-
     def set_start_time(self, time):
         self.session_start = time
 
