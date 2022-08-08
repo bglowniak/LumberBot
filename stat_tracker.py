@@ -167,7 +167,6 @@ class StatTracker():
             return None
 
         # if there is a tie, there will be multiple usernames in the list
-        # TODO: better way to do this??
         best_kd = -1
         best_kd_winners = []
 

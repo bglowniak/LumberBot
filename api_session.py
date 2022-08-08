@@ -32,21 +32,23 @@ class WarzoneApi():
     # start and end parameters don't actually work as expected
     def get_matches(self, username):
         req_url = f"crm/cod/v2/title/mw/platform/uno/gamer/{username}/matches/wz/start/0/end/0/details"
-        api_data = self._api_call(req_url)
-        if api_data["status"] != "success":
-            raise Exception(f"API returned 200 status code but there was an unknown error. API responded with {api_data}")
-
+        api_data = self._wz_api_call(req_url)
         return api_data["data"]["matches"]
 
     # use match ID to get more detailed data/stats
     def get_match_details(self, match_id):
         req_url = f"crm/cod/v2/title/mw/platform/uno/fullMatch/wz/{match_id}/en"
-        api_data = self._api_call(req_url)
-        # TODO: similar checks to get matches?
+        api_data = self._wz_api_call(req_url)
         return api_data["data"]["allPlayers"]
 
-    def _api_call(self, req_url):
+    def _wz_api_call(self, req_url):
         resp = self.session.get(self.base_url + req_url, headers=self.user_agent_header)
         if resp.status_code != 200:
             raise Exception(f"Unable to retrieve data from Warzone API. API responded with {resp.status_code}: {resp.text}")
-        return resp.json()
+        
+        api_data = resp.json()
+
+        if api_data["status"] != "success":
+            raise Exception(f"API returned 200 status code but there was an unknown error. API responded with {api_data}")
+        
+        return api_data
