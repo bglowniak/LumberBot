@@ -1,7 +1,7 @@
 # LumberBot
 Simple Discord bot
 
-[Warzone API Authentication Reference](https://github.com/sdiepend/cod_api) (does not work anymore b/c of captcha)
+[Warzone API Authentication Reference](https://github.com/sdiepend/cod_api) (does not work anymore b/c of captcha)  
 [Warzone API Endpoint Reference](https://documenter.getpostman.com/view/5519582/SzzgAefq)
 
 ## Warzone Session Tracking
