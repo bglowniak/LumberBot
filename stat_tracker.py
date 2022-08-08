@@ -145,16 +145,20 @@ class StatTracker():
         kills = player_stats["kills"]
         deaths = player_stats["deaths"]
         damage = player_stats["damage"]
-        matches = player_stats["individual_matches"]  # separate from total matches in case player leaves early
+        matches = player_stats["individual_matches"]
+        max_kills = player_stats["max_kills"]
+        max_deaths = player_stats["max_deaths"]
 
         kd_ratio = self._calc_ratio(kills, deaths)
         avg_kills = round(kills / matches, 2)
+        avg_deaths = round(deaths / matches, 2)
         avg_damage = round(damage / matches, 2)
 
         return f"Stats for **{username}**:\n" \
                f"**Matches Played**: {matches}\n" \
                f"**K/D**: {int(kills)}-{int(deaths)} ({kd_ratio})\n" \
-               f"**Average Kills**: {avg_kills}\n" \
+               f"**Average Kills**: {avg_kills} (Max: {int(max_kills)})\n" \
+               f"**Average Deaths**: {avg_deaths} (Max: {int(max_deaths)})\n" \
                f"**Average Damage**: {avg_damage} ({int(damage)} total)\n"
 
     # processes stats and assigns awards
@@ -185,7 +189,7 @@ class StatTracker():
             damage = stats["damage"]
             damage_taken = stats["damage_taken"]
             kd_ratio = self._calc_ratio(kills, deaths)
-            damage_ratio = self._calc_ratio(damage, damage_taken)  # should probably rename the func lol
+            damage_ratio = self._calc_ratio(damage, damage_taken)
 
             player = self._map_player_name(player)
 
