@@ -237,19 +237,19 @@ class StatTracker():
     # hardcode known gamertags to Discord message IDs
     def _replace_player_name(self, player):
         if player == "bglowniak":
-            player = "<@!250017966928691211>"
+            player = "<@250017966928691211>"
         elif player == "triplexlink":
-            player = "<@!273518554517602305>"
+            player = "<@273518554517602305>"
         elif player == "funny_monkey998":
-            player = "<@!479298269110075433>"
+            player = "<@479298269110075433>"
         elif player == "MisterDuV":
-            player = "<@!425035767350296578>"
+            player = "<@425035767350296578>"
         elif player == "Sharkyplace":
-            player = "<@!545430460860334082>"
+            player = "<@545430460860334082>"
         elif player == "TetoTeto":
-            player = "<@!483853566281383946>"
+            player = "<@483853566281383946>"
         elif player == "cooliodude13":
-            player = "<@!137213864872902656>"
+            player = "<@137213864872902656>"
 
         return player
 
