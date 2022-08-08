@@ -45,10 +45,10 @@ class WarzoneApi():
         resp = self.session.get(self.base_url + req_url, headers=self.user_agent_header)
         if resp.status_code != 200:
             raise Exception(f"Unable to retrieve data from Warzone API. API responded with {resp.status_code}: {resp.text}")
-        
+
         api_data = resp.json()
 
         if api_data["status"] != "success":
             raise Exception(f"API returned 200 status code but there was an unknown error. API responded with {api_data}")
-        
+
         return api_data

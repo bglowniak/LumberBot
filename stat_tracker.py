@@ -54,7 +54,7 @@ class StatTracker():
 
         if kills > self.stats_dict["players"][username]["max_kills"]:
             self.stats_dict["players"][username]["max_kills"] = kills
-        
+
         if deaths > self.stats_dict["players"][username]["max_deaths"]:
             self.stats_dict["players"][username]["max_deaths"] = deaths
 
@@ -83,7 +83,7 @@ class StatTracker():
             kd_ratio = self._calc_ratio(kills, deaths)
             damage = stats["damage"]
 
-            player = self._map_player_name(player)
+            player = self._replace_player_name(player)
             format += f"    • {player}: {int(kills)}-{int(deaths)} ({kd_ratio} K/D), {int(damage)} damage.\n"
 
         return format
@@ -190,7 +190,7 @@ class StatTracker():
             kd_ratio = self._calc_ratio(kills, deaths)
             damage_ratio = self._calc_ratio(damage, damage_taken)
 
-            player = self._map_player_name(player)
+            player = self._replace_player_name(player)
 
             # MVP Award (Best KD Ratio)
             if kd_ratio == best_kd:
@@ -235,7 +235,7 @@ class StatTracker():
                f"    •**Commando**: {', '.join(best_damage_winners)} ({best_damage_ratio} damage ratio)"
 
     # hardcode known gamertags to Discord message IDs
-    def _map_player_name(self, player):
+    def _replace_player_name(self, player):
         if player == "bglowniak":
             player = "<@!250017966928691211>"
         elif player == "triplexlink":

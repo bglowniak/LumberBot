@@ -152,14 +152,14 @@ class LumberBot(Bot):
 
                         # collect stats for individual match
                         match_stats_dict[username] = {
-                            "kills": kills, 
-                            "deaths": player_stats["deaths"], 
+                            "kills": kills,
+                            "deaths": player_stats["deaths"],
                             "damage": player_stats["damageDone"]
                         }
 
                         if kills >= 10:
                             logging.info(f"Found a 10+ kill game for {username}. Sending congrats message.")
-                            discord_handle = self.stat_tracker._map_player_name(username)
+                            discord_handle = self.stat_tracker._replace_player_name(username)
                             await self.default_channels[self.server].send(f"Congrats to {discord_handle} who has achieved **{int(kills)} kills** in a single Warzone match!")
 
                 # if we won this match, send a congrats message to the channel
