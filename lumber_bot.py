@@ -124,18 +124,18 @@ class LumberBot(Bot):
             self.most_recent_match_id = recent_matches[0]["matchID"]
         elif recent_matches[0]["matchID"] != self.most_recent_match_id:  # there are new matches to process
             for match in recent_matches:
-                current_ID = match["matchID"]
-                if current_ID == self.most_recent_match_id:  # we have processed all new matches in the list
+                current_id = match["matchID"]
+                if current_id == self.most_recent_match_id:  # we have processed all new matches in the list
                     break
 
                 # get basic match data
                 placement = match["playerStats"]["teamPlacement"]
-                self.stat_tracker.update_cumulative_match_stats(placement)
                 team = match["player"]["team"]
+                self.stat_tracker.update_cumulative_match_stats(placement)
 
                 # no API auth or response checks here - if we don't get the expected data, just skip
                 try:
-                    all_player_stats = self.api.get_match_details(current_ID)
+                    all_player_stats = self.api.get_match_details(current_id)
                 except Exception as e:
                     logging.error(f"Match Details call failed: {e}")
                     continue
@@ -151,11 +151,12 @@ class LumberBot(Bot):
 
                         self.stat_tracker.update_cumulative_player_stats(username, player_stats)
 
-                        # format stats for individual match
-                        kills = player_stats["kills"]
-                        deaths = player_stats["deaths"]
-                        damage = player_stats["damageDone"]
-                        match_stats_dict[username] = {"kills": kills, "deaths": deaths, "damage": damage}
+                        # collect stats for individual match
+                        match_stats_dict[username] = {
+                            "kills": player_stats["kills"], 
+                            "deaths": player_stats["deaths"], 
+                            "damage": player_stats["damageDone"]
+                        }
 
                         if kills >= 10:
                             logging.info(f"Found a 10+ kill game for {username}. Sending congrats message.")
@@ -164,7 +165,7 @@ class LumberBot(Bot):
 
                 # if we won this match, send a congrats message to the channel
                 if placement == 1:
-                    logging.info(f"Warzone win found with ID {current_ID}. Creating stats message.")
+                    logging.info(f"Warzone win found with ID {current_id}. Creating stats message.")
                     salute = random.choice(os.listdir(self.salute_directory))
                     win_message = self.stat_tracker.format_win_message(match, match_stats_dict)
 
